@@ -103,8 +103,8 @@ local function load_data_from_file(inputFileName)
 	local numSamples = dim[1];
 	print_debug(('Reading data from %s : %d samples'):format(
 		inputFileName, numSamples))
-	-- local data = readFile:read('/data'):all();
-	local data = readFile:read('/data'):partial({1, 100}, {1, dim[2]}, {1, dim[3]}, {1, dim[4]});
+	local data = readFile:read('/data'):all();
+	-- local data = readFile:read('/data'):partial({1, 100}, {1, dim[2]}, {1, dim[3]}, {1, dim[4]});
 	readFile:close();
 
 	return data
