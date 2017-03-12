@@ -38,10 +38,11 @@ cmd:option('-sampleStd', 1, 'Standard deviation of Gaussian distribution to samp
 cmd:option('-cpu', 0, 'CPU only (useful if GPU memory is too low)');
 -- control
 cmd:option('-continue_train', 0, "if continue training, load the latest model: true, false")
+cmd:option('-partial_learning', 1, "Learing with partial data, but at least one sample from the file")
 -- save
-cmd:option('-save_epoch_freq', 500, "network saving frequency")
+cmd:option('-save_epoch_freq', 1, "network saving frequency")
 cmd:option('-save_point', './training_result', "path to trained network")
-cmd:option('-save_name', 'autoencoder', 'name for saving')
+cmd:option('-save_name', '', 'name for saving')
 
 local opt = cmd:parse(arg);
 if 1 == opt.cpu then
@@ -103,8 +104,20 @@ local function load_data_from_file(inputFileName)
 	local numSamples = dim[1];
 	print_debug(('Reading data from %s : %d samples'):format(
 		inputFileName, numSamples))
-	local data = readFile:read('/data'):all();
-	-- local data = readFile:read('/data'):partial({1, 100}, {1, dim[2]}, {1, dim[3]}, {1, dim[4]});
+
+	local data = {};
+	if 1 == opt.partial_learning or numSamples < opt.batchSize then
+		-- full read
+		data = readFile:read('/data'):all();
+	else
+		-- read at least one batch size
+		local load_size = math.max(opt.batchSize, math.floor(numSamples * opt.partial_learning))
+		-- to considering speed (because the data is read with chunk size),
+		-- read the continuous data
+		local start_pos = math.random(numSamples - load_size + 1)
+		local end_pos = start_pos + load_size - 1;
+		data = readFile:read('/data'):partial({start_pos, end_pos}, {1, dim[2]}, {1, dim[3]}, {1, dim[4]});
+	end	
 	readFile:close();
 
 	return data
@@ -328,8 +341,8 @@ for epoch = epoch_start, opt.epochs do
 			count = count + 1;
 		end
 
-		print(('Epoch: [%d][%3d/%3d]   Batches: %3d, Time: %.2f, FileTime: %.2f, Loss: %.5f'):format(
-			epoch, k, #inputFileList, count, tm:time().real, file_tm:time().real, loss[1]))
+		print(('Epoch: [%d][%3d/%3d]   Batches: %3d, Batch Time: %.2f, Acc.Time: %.2f, Loss: %.5f'):format(
+			epoch, k, #inputFileList, count, file_tm:time().real, tm:time().real, loss[1]))
 	end
 	
 	-- Plot training curve(s)
