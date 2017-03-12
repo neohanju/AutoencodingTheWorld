@@ -56,14 +56,15 @@ function Model:createAutoencoder(X)
   self.encoder:add(poolingLayer1);
   -- out: 256 x 27 x 27
 
-  local groupTable = nn.tables.group(256, 128, 2)
+  -- local groupTable = nn.tables.group(256, 128, 2)
   -- out: 128 x 27 x 27
-  self.encoder:add(nn.SpatialZeroPadding(2, 2, 2, 2))
-  -- out: 128 x 31 x 31
-  self.encoder:add(nn.SpatialConvolutionMap(groupTable, 5, 5, 1, 1))  -- no way to add padding
+  -- self.encoder:add(nn.SpatialZeroPadding(2, 2, 2, 2))
+  -- -- out: 128 x 31 x 31
+  -- self.encoder:add(nn.SpatialConvolutionMap(groupTable, 5, 5, 1, 1))  -- no way to add padding
+  self.encoder:add(nn.SpatialConvolution(256, 128, 5, 5, 1, 1, 2, 2))
   self.encoder:add(nn.Tanh())
   self.encoder:add(nn.SpatialCrossMapLRN(5, 0.0001, 0.75))
-  -- out: 256 x 27 x 27
+  -- out: 128 x 27 x 27
   self.encoder:add(poolingLayer2)
   -- out: 128 x 13 x 13
 

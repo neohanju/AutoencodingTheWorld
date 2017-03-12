@@ -9,6 +9,11 @@ local hasCudnn, cudnn = pcall(require, 'cudnn'); -- Use cuDNN if available
 util = paths.dofile('util/util.lua')
 -- require 'dpnn';
 
+debug_display = false;
+local function print_debug(...)
+	if debug_display then print(...) end
+end
+
 
 --=============================================================================
 -- Command-line options
@@ -33,14 +38,26 @@ cmd:option('-sampleStd', 1, 'Standard deviation of Gaussian distribution to samp
 cmd:option('-cpu', 0, 'CPU only (useful if GPU memory is too low)');
 -- control
 cmd:option('-continue_train', 0, "if continue training, load the latest model: true, false")
+-- save
+cmd:option('-save_epoch_freq', 1, "network saving frequency")
+cmd:option('-save_point', './training_result', "path to trained network")
+cmd:option('-save_name', 'autoencoder', 'name for saving')
 
 local opt = cmd:parse(arg);
-if opt.cpu then
+if 1 == opt.cpu then
 	cuda = false;
+else
+	opt.gpu = 1;
 end
 if opt.model == 'DenoisingAE' then
 	opt.denoising = false; -- Disable "extra" denoising
 end
+if 1 == opt.continue_train then
+	opt.continue_train = true;
+else
+	opt.continue_train = false;
+end
+if hasCudnn then opt.cudnn = 1 end
 print(opt)
 
 
@@ -104,8 +121,24 @@ local function weights_init(m)
 	end
 end
 
-local Model = require ('models/' .. opt.model);
-Model:createAutoencoder(XTrain);
+if opt.continue_train then
+	local netFileList = {}
+	for file in paths.files(paths.concat(opt.save_point, opt.save_name), ".t7") do
+		table.insert(netFileList, file);
+	end
+	assert(nil ~= next(netFileList), "There is no proper network saving data at" ..
+		paths.concat(opt.save_point, opt.save_name))
+	-- find the latest network
+	table.sort(netFileList, 
+		function (a, b) 
+			return string.lower(a) > string.lower(b) 
+		end)
+	print(('load model from %s'):format(netFileList[1]))
+	Model = util.load_model(paths.concat(opt.save_point, opt.save_name, netFileList[1]), opt)
+else
+	Model = require ('models/' .. opt.model);
+	Model:createAutoencoder(XTrain);
+end
 
 -- if opt.denoising then
 -- 	Model.autoencoder:insert(nn.WhiteNoise(0, 0.5), 1); -- Add noise during training
@@ -113,7 +146,6 @@ Model:createAutoencoder(XTrain);
 
 local autoencoder = Model.autoencoder;
 local encoder = Model.encoder;
-print(encoder);
 
 autoencoder:apply(weights_init);
 
@@ -129,7 +161,7 @@ local batchInput  = torch.Tensor(opt.batchSize, sampleLength, sampleHeight, samp
 local batchOutput = torch.Tensor(opt.batchSize, sampleLength, sampleHeight, sampleWidth)
 
 if cuda then
-	print('transferring to gpu...')
+	print('Transferring to gpu...')
 	require 'cunn'
 	cutorch.setDevice(opt.gpu)
 	
@@ -140,8 +172,15 @@ if cuda then
 	-- network
 	if hasCudnn then
 		-- Use cuDNN if available
-		autoencoder = util.cudnn(autoencoder)
-		encoder = util.cudnn(encoder)
+		cudnn.benchmark = true
+		cudnn.fastest = true
+		cudnn.verbose = false
+		cudnn.convert(autoencoder, cudnn, function(module)
+			return torch.type(module):find('SpatialMaxPooling') -- to associate with maxUnpooling
+		end)
+		-- autoencoder = util.cudnn(autoencoder)
+		-- encoder = util.cudnn(encoder)
+		print(autoencoder)
 	end
 	autoencoder:cuda();
 
@@ -150,7 +189,7 @@ if cuda then
 	
 	print('done')
 else
-	print('running model on CPU')
+	print('Running model on CPU')
 end
 
 -- Get parameters
@@ -179,12 +218,17 @@ end
 --=============================================================================
 -- Training
 --=============================================================================
-print('Training')
+print('Training...')
 autoencoder:training()
 
+-- for network saving
+paths.mkdir(opt.save_point)
+paths.mkdir(opt.save_point .. '/' .. opt.save_name)
+
+-- optimizer parameters
 optimState = {
-   learningRate = opt.learningRate,
-   weightDecay = opt.weightDecay,
+	learningRate = opt.learningRate,
+	weightDecay  = opt.weightDecay,
 }
 
 local __, loss
@@ -196,7 +240,9 @@ local leftDataLength = 0
 for epoch = 1, opt.epochs do
 	epoch_tm:reset()
 
+	-- shufflie the input file list
 	local fileIndices = torch.randperm(#inputFileList);
+
 	for k = 1, #inputFileList do
 		local fIdx = fileIndices[k];
 
@@ -204,47 +250,67 @@ for epoch = 1, opt.epochs do
 		local data = load_data_from_file(inputFileList[fIdx]);
 		print(('Done: %3f secs'):format(data_tm:time().real))
 
-		-- Permute data
+		-- shufffle the data
 		data = data:index(1, torch.randperm(data:size(1)):long())
-		print(('total samples: %d'):format(data:size(1)))
-		print(('left sample before loop: %d'):format(leftDataLength))
+		print_debug(('total samples: %d'):format(data:size(1)))
+		print_debug(('left sample before loop: %d'):format(leftDataLength))
 
-		for start = leftDataLength+1, data:size(1), opt.batchSize do
-			print(('start: %d'):format(start))
-			-- Get minibatch
-			local loadSize = math.min(data:size(1) - start + 1, opt.batchSize - leftDataLength)
-			print(('loaded samples: %d'):format(loadSize))
+		local start = 1;
+		while true do
 
-			local readySize = leftDataLength + loadSize;
-			local loadedData = data:sub(start, start + loadSize -1);
+		-- for start = leftDataLength+1, data:size(1), opt.batchSize do
+			print_debug(('start: %d'):format(start))
+
+			-- get minibatch
+			local loadSize   = math.min(data:size(1) - start + 1, opt.batchSize - leftDataLength)
+			local loadedData = data:sub(start, start + loadSize - 1);
+			print_debug(('loaded samples: %d'):format(loadSize))
+
+			-- total size (load size + left data size)
+			local readySize = leftDataLength + loadSize;			
 
 			if readySize < opt.batchSize then
+				-- less than batch size
+
 				if  0 == leftDataLength then
 					-- save and skip
 					batchInput:sub(1, loadSize):copy(loadedData);
 				else
-					batchInput:sub(leftDataLength+1, readySize):copy(loadedData);					
+					batchInput:sub(leftDataLength + 1, readySize):copy(loadedData);					
 				end
 				leftDataLength = readySize;
-				print(('left sample: %d'):format(leftDataLength))
+				print_debug(('left sample: %d'):format(leftDataLength))
 			else
+				-- batch size
+
 				if leftDataLength > 0 then
-					print(('left samples: %d, loaded sampled: %d'):format(leftDataLength, loadSize))
+					print_debug(('left samples: %d, loaded sampled: %d'):format(leftDataLength, loadSize))
+				else
+					print_debug('full batch')
 				end
 
-				batchInput:sub(leftDataLength+1, readySize):copy(loadedData);
+				batchInput:sub(leftDataLength + 1, readySize):copy(loadedData);
 				leftDataLength = 0;
 				
 				-- Optimize
 				print('optimize start')
-				-- __, loss = optim.adagrad(feval, params, optimState)
-				loss = {1, 1}
+				__, loss = optim.adagrad(feval, params, optimState)
 				print(('optimize end, current loss: %.7f'):format(loss[1]))
 
 				losses[#losses + 1] = loss[1]
 			end
+
+			start = start + loadSize;
+			if start > data:size(1) then
+				print_debug(('loop end with start = %d'):format(start))
+				break
+			end
+			-- print(('Epoch: [%d][%8d / %8d]\t Time: %.3f  DataTime: %.3f  '
+   --                  .. '  Err_G: %.4f  Err_D: %.4f  ErrL1: %.4f'):format(
+   --                   epoch, curItInBatch, totalItInBatch,
+   --                   tm:time().real / opt.batchSize, data_tm:time().real / opt.batchSize,
+   --                   errG, errD, errL1))
 		end
-		print("========================================")
 	end
 	
 	-- Plot training curve(s)
@@ -256,7 +322,12 @@ for epoch = 1, opt.epochs do
 	gnuplot.plotflush()
 
 	print(('End of epoch %d / %d \t Time Taken: %.3f secs'):format(
-            epoch, opt.epochs, epoch_tm:time().real))
+		epoch, opt.epochs, epoch_tm:time().real))
+
+	if epoch % opt.save_epoch_freq == 0 then
+		-- autoencoder:clearState();
+		-- torch.save(paths.concat(opt.save_point, opt.save_name, ('net_epoch_%05d.t7'):format(epoch)), Model)
+	end
 end
 
 

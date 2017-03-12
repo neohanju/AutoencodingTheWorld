@@ -226,4 +226,36 @@ function util.containsValue(table, value)
   return false
 end
 
+function util.load_model(filename, opt)
+  if opt.cudnn>0 then
+    require 'cudnn'
+  end
+  
+  if opt.gpu > 0 then 
+    require 'cunn'
+  end
+
+  local Model = torch.load(filename)
+  local autoencoder = Model.autoencoder
+
+  if opt.gpu > 0 then
+    autoencoder:cuda()
+
+    -- calling cuda on cudnn saved nngraphs doesn't change all variables to cuda, so do it below
+    if autoencoder.forwardnodes then
+      for i=1,#autoencoder.forwardnodes do
+          if autoencoder.forwardnodes[i].data.module then
+            autoencoder.forwardnodes[i].data.module:cuda()
+          end
+      end
+    end
+  else
+    autoencoder:float()
+  end
+  autoencoder:apply(function(m) if m.weight then 
+    m.gradWeight = m.weight:clone():zero(); 
+    m.gradBias = m.bias:clone():zero(); end end)
+  return Model
+end
+
 return util
