@@ -226,6 +226,7 @@ function util.containsValue(table, value)
   return false
 end
 
+-- added by NEOHANJU (2017.03.12)
 function util.load_model(filename, opt)
   if opt.cudnn>0 then
     require 'cudnn'
@@ -234,10 +235,19 @@ function util.load_model(filename, opt)
   if opt.gpu > 0 then 
     require 'cunn'
   end
+  
+  local Model = {}
+  Model.autoencoder = torch.load(filename)
 
-  local Model = torch.load(filename)
+  if 'convAE' == opt.model then
+    Model.encoder = Model.autoencoder.modules[1]
+    Model.decoder = Model.autoencoder.modules[2]
+  elseif 'convVAE' == opt.model then
+    Model.encoder = Model.autoencoder.modules[1]
+    Model.decoder = Model.autoencoder.modules[3]
+  end
+
   local autoencoder = Model.autoencoder
-
   if opt.gpu > 0 then
     autoencoder:cuda()
 

@@ -22,7 +22,7 @@ local cmd = torch.CmdLine();
 -- major parameters
 cmd:option('-model', 'ConvAE', 'Model: AE|SparseAE|DeepAE|ConvAE|UpconvAE|DenoisingAE|Seq2SeqAE|VAE|CatVAE|WTA-AE');
 cmd:option('-batchSize', 64, 'Batch size');
-cmd:option('-epochs', 20, 'Training epochs');
+cmd:option('-epochs', 10000, 'Training epochs');
 -- data loading
 cmd:option('-datasetPath', '', 'Path for dataset folder')
 cmd:option('-nThreads', 2, '# of threads for data loading')
@@ -39,7 +39,7 @@ cmd:option('-cpu', 0, 'CPU only (useful if GPU memory is too low)');
 -- control
 cmd:option('-continue_train', 0, "if continue training, load the latest model: true, false")
 -- save
-cmd:option('-save_epoch_freq', 1, "network saving frequency")
+cmd:option('-save_epoch_freq', 500, "network saving frequency")
 cmd:option('-save_point', './training_result', "path to trained network")
 cmd:option('-save_name', 'autoencoder', 'name for saving')
 
@@ -57,6 +57,9 @@ if 1 == opt.continue_train then
 else
 	opt.continue_train = false;
 end
+if '' == opt.save_name then
+	opt.save_name = opt.model
+end
 if hasCudnn then opt.cudnn = 1 end
 print(opt)
 
@@ -64,7 +67,7 @@ print(opt)
 --=============================================================================
 -- Set up Torch
 --=============================================================================
-print('Setting up');
+print('Setting up...');
 torch.setdefaulttensortype('torch.FloatTensor');
 torch.manualSeed(854);
 if cuda then
@@ -72,9 +75,10 @@ if cuda then
 	cutorch.manualSeed(torch.random());
 end
 
-local epoch_tm = torch.Timer()
 local tm = torch.Timer()
+local epoch_tm = torch.Timer()
 local data_tm = torch.Timer()
+local file_tm = torch.Timer()
 
 --=============================================================================
 -- Load data
@@ -97,7 +101,7 @@ local function load_data_from_file(inputFileName)
 	local readFile = hdf5.open(paths.concat(opt.datasetPath, inputFileName), 'r');
 	local dim = readFile:read('/data'):dataspaceSize();
 	local numSamples = dim[1];
-	print(('Reading data from %s : %d samples'):format(
+	print_debug(('Reading data from %s : %d samples'):format(
 		inputFileName, numSamples))
 	-- local data = readFile:read('/data'):all();
 	local data = readFile:read('/data'):partial({1, 100}, {1, dim[2]}, {1, dim[3]}, {1, dim[4]});
@@ -121,23 +125,36 @@ local function weights_init(m)
 	end
 end
 
-if opt.continue_train then
+if 'ConvVAE' == opt.model then
+	require 'modules/Gaussian'
+end
+
+-- generate model
+print('Prepare the model...')
+if opt.continue_train then	
+	-- find the latest network
 	local netFileList = {}
 	for file in paths.files(paths.concat(opt.save_point, opt.save_name), ".t7") do
 		table.insert(netFileList, file);
 	end
 	assert(nil ~= next(netFileList), "There is no proper network saving data at" ..
-		paths.concat(opt.save_point, opt.save_name))
-	-- find the latest network
+		paths.concat(opt.save_point, opt.save_name))	
 	table.sort(netFileList, 
 		function (a, b) 
 			return string.lower(a) > string.lower(b) 
 		end)
-	print(('load model from %s'):format(netFileList[1]))
+
+	for token in string.gmatch(netFileList[1], "[%d]+") do
+		epoch_start = tonumber(token) + 1;
+		break;
+	end
+	print(('load model from %s with epoch at %d'):format(netFileList[1], epoch_start))
+
 	Model = util.load_model(paths.concat(opt.save_point, opt.save_name, netFileList[1]), opt)
 else
 	Model = require ('models/' .. opt.model);
 	Model:createAutoencoder(XTrain);
+	epoch_start = 1;
 end
 
 -- if opt.denoising then
@@ -237,7 +254,7 @@ local losses = {}
 local leftDataLength = 0
 
 
-for epoch = 1, opt.epochs do
+for epoch = epoch_start, opt.epochs do
 	epoch_tm:reset()
 
 	-- shufflie the input file list
@@ -246,9 +263,10 @@ for epoch = 1, opt.epochs do
 	for k = 1, #inputFileList do
 		local fIdx = fileIndices[k];
 
+		file_tm:reset()
 		data_tm:reset()
 		local data = load_data_from_file(inputFileList[fIdx]);
-		print(('Done: %3f secs'):format(data_tm:time().real))
+		print_debug(('Done: %3f secs'):format(data_tm:time().real))
 
 		-- shufffle the data
 		data = data:index(1, torch.randperm(data:size(1)):long())
@@ -256,6 +274,7 @@ for epoch = 1, opt.epochs do
 		print_debug(('left sample before loop: %d'):format(leftDataLength))
 
 		local start = 1;
+		local count = 1;
 		while true do
 
 		-- for start = leftDataLength+1, data:size(1), opt.batchSize do
@@ -293,24 +312,24 @@ for epoch = 1, opt.epochs do
 				leftDataLength = 0;
 				
 				-- Optimize
-				print('optimize start')
+				print_debug('optimize start')
 				__, loss = optim.adagrad(feval, params, optimState)
-				print(('optimize end, current loss: %.7f'):format(loss[1]))
+				print_debug(('optimize end, current loss: %.7f'):format(loss[1]))
 
 				losses[#losses + 1] = loss[1]
 			end
 
 			start = start + loadSize;
+			
 			if start > data:size(1) then
 				print_debug(('loop end with start = %d'):format(start))
 				break
 			end
-			-- print(('Epoch: [%d][%8d / %8d]\t Time: %.3f  DataTime: %.3f  '
-   --                  .. '  Err_G: %.4f  Err_D: %.4f  ErrL1: %.4f'):format(
-   --                   epoch, curItInBatch, totalItInBatch,
-   --                   tm:time().real / opt.batchSize, data_tm:time().real / opt.batchSize,
-   --                   errG, errD, errL1))
+			count = count + 1;
 		end
+
+		print(('Epoch: [%d][%3d/%3d]   Batches: %3d, Time: %.2f, FileTime: %.2f, Loss: %.5f'):format(
+			epoch, k, #inputFileList, count, tm:time().real, file_tm:time().real, loss[1]))
 	end
 	
 	-- Plot training curve(s)
@@ -324,98 +343,11 @@ for epoch = 1, opt.epochs do
 	print(('End of epoch %d / %d \t Time Taken: %.3f secs'):format(
 		epoch, opt.epochs, epoch_tm:time().real))
 
-	if epoch % opt.save_epoch_freq == 0 then
-		-- autoencoder:clearState();
-		-- torch.save(paths.concat(opt.save_point, opt.save_name, ('net_epoch_%05d.t7'):format(epoch)), Model)
+	if epoch % opt.save_epoch_freq == 0 then		
+		torch.save(paths.concat(opt.save_point, opt.save_name, ('net_epoch_%05d.t7'):format(epoch)),
+			autoencoder:clearState())
 	end
 end
-
-
--- --=============================================================================
--- -- Plot reconstructions
--- --=============================================================================
--- image.save('Reconstructions.png', torch.cat(image.toDisplayTensor(x, 2, 10), image.toDisplayTensor(xHat, 2, 10), 1))
-
--- if opt.model == 'AE' or opt.model == 'SparseAE' or opt.model == 'WTA-AE' then
--- 	-- Plot filters
--- 	image.save('Weights.png', image.toDisplayTensor(Model.decoder:findModules('nn.Linear')[1].weight:view(x:size(3), x:size(2), Model.features):transpose(1, 3), 1, math.floor(math.sqrt(Model.features))))
--- end
-
--- if opt.model == 'VAE' then
--- 	if opt.denoising then
--- 		autoencoder:training() -- Retain corruption process
--- 	end
-
--- 	-- Plot interpolations
--- 	local height, width = XTest:size(2), XTest:size(3)
--- 	local interpolations = torch.Tensor(15 * height, 15 * width):typeAs(XTest)
--- 	local step = 0.05 -- Use small steps in dense region of 2D Gaussian; TODO: Move to spherical interpolation?
-
--- 	-- Sample 15 x 15 points
--- 	for i = 1, 15  do
--- 		for j = 1, 15 do
--- 			local sample = torch.Tensor({2 * i * step - 16 * step, 2 * j * step - 16 * step}):typeAs(XTest):view(1, 2) -- Minibatch of 1 for batch normalisation
--- 			interpolations[{{(i-1) * height + 1, i * height}, {(j-1) * width + 1, j * width}}] = Model.decoder:forward(sample)
--- 		end
--- 	end
--- 	image.save('Interpolations.png', interpolations)
-
--- 	-- Plot samples
--- 	local output = Model.decoder:forward(torch.Tensor(15 * 15, 2):normal(0, opt.sampleStd):typeAs(XTest)):clone()
-
--- 	-- Perform MCMC sampling
--- 	for m = 0, opt.mcmc do
--- 		-- Save samples
--- 		if m == 0 then
--- 			image.save('Samples.png', image.toDisplayTensor(Model.decoder.output, 0, 15))
--- 		else
--- 			image.save('Samples (MCMC step ' .. m .. ').png', image.toDisplayTensor(Model.decoder.output, 0, 15))
--- 		end
-
--- 		-- Forward again
--- 		autoencoder:forward(output)
--- 	end
--- elseif opt.model == 'CatVAE' then
--- 	if opt.denoising then
--- 		autoencoder:training() -- Retain corruption process
--- 	end
-
--- 	-- Plot "interpolations"
--- 	local height, width = XTest:size(2), XTest:size(3)
--- 	local interpolations = torch.Tensor(Model.N * height, Model.k * width):typeAs(XTest)
-
--- 	for n = 1, Model.N do
--- 		for k = 1, Model.k do
--- 			local sample = torch.zeros(Model.N, Model.k):typeAs(XTest)
--- 			sample[{{}, {1}}] = 1 -- Start with first dimension "set"
--- 			sample[n] = 0 -- Zero out distribution
--- 			sample[n][k] = 1 -- "Set" cluster
--- 			interpolations[{{(n-1) * height + 1, n * height}, {(k-1) * width + 1, k * width}}] = Model.decoder:forward(sample:view(1, Model.N * Model.k)) -- Minibatch of 1 for batch normalisation
--- 		end
--- 	end
--- 	image.save('Interpolations.png', interpolations)
-
--- 	-- Plot samples
--- 	local samples = torch.Tensor(15 * 15 * Model.N, Model.k):bernoulli(1 / Model.k):typeAs(XTest):view(15 * 15, Model.N * Model.k)
--- 	local output = Model.decoder:forward(samples):clone()
-
--- 	-- Perform MCMC sampling
--- 	for m = 0, opt.mcmc do
--- 		-- Save samples
--- 		if m == 0 then
--- 			image.save('Samples.png', image.toDisplayTensor(Model.decoder.output, 0, 15))
--- 		else
--- 			image.save('Samples (MCMC step ' .. m .. ').png', image.toDisplayTensor(Model.decoder.output, 0, 15))
--- 		end
-
--- 		-- Forward again
--- 		autoencoder:forward(output)
--- 	end
--- end
-
-
-
-
 
 -- ()()
 -- ('') HAANJU.YOO

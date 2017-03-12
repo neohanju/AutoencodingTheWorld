@@ -1,41 +1,9 @@
 local nn = require 'nn'
---local nn = require 'nngraph'
+require '../modules/Gaussian'
 
-local Model = {}
-
-function nn.tables.group(nin, nout, ngroup)
-  local input_group_size  = math.floor(nin / ngroup + 0.5)
-  local output_group_size = math.floor(nout / ngroup + 0.5)
-
-  local in_start = 1; local out_start = 1;
-  local input_group_boundary = {};
-  local output_group_boundary = {};
-  local num_table_element = 0;
-  for k = 1, ngroup do
-    in_end = math.min(in_start + input_group_size - 1, nin);
-    out_end = math.min(out_start + output_group_size - 1, nout);
-    input_group_boundary[k] = {in_start, in_end};
-    output_group_boundary[k] = {out_start, out_end};
-    num_table_element = num_table_element + (in_end - in_start + 1) * (out_end - out_start + 1);
-
-    in_start = in_end + 1;
-    out_start = out_end + 1;
-  end
-
-  local ft = torch.Tensor(num_table_element, 2);
-  local p = 1
-  for k = 1, ngroup do
-    for i = input_group_boundary[k][1], input_group_boundary[k][2] do
-      for o = output_group_boundary[k][1], output_group_boundary[k][2] do
-        ft[p][1] = i;
-        ft[p][2] = o;
-        p = p + 1;
-      end
-    end
-  end
-
-  return ft
-end
+local Model = {
+  zSize = 200
+}
 
 function Model:createAutoencoder(X)
   local L = X:size(2)
@@ -56,11 +24,6 @@ function Model:createAutoencoder(X)
   self.encoder:add(poolingLayer1);
   -- out: 256 x 27 x 27
 
-  -- local groupTable = nn.tables.group(256, 128, 2)
-  -- out: 128 x 27 x 27
-  -- self.encoder:add(nn.SpatialZeroPadding(2, 2, 2, 2))
-  -- -- out: 128 x 31 x 31
-  -- self.encoder:add(nn.SpatialConvolutionMap(groupTable, 5, 5, 1, 1))  -- no way to add padding
   self.encoder:add(nn.SpatialConvolution(256, 128, 5, 5, 1, 1, 2, 2))
   self.encoder:add(nn.Tanh())
   self.encoder:add(nn.SpatialCrossMapLRN(5, 0.0001, 0.75))
@@ -72,9 +35,36 @@ function Model:createAutoencoder(X)
   self.encoder:add(nn.Tanh())
   -- out: 64 x 13 x 13
 
+  -- Create latent Z parameter layer
+  local zLayer = nn.ConcatTable()
+  zLayer:add(nn.SpatialConvolution(64, self.zSize, 13, 13)) -- Mean μ of Z
+  zLayer:add(nn.SpatialConvolution(64, self.zSize, 13, 13)) -- Log variance σ^2 of Z (diagonal covariance)
+  self.encoder:add(zLayer) -- Add Z parameter layer
+
+  -- Create σε module
+  local noiseModule = nn.Sequential()
+  local noiseModuleInternal = nn.ConcatTable()
+  local stdModule = nn.Sequential()
+  stdModule:add(nn.MulConstant(0.5)) -- Compute 1/2 log σ^2 = log σ
+  stdModule:add(nn.Exp()) -- Compute σ
+  noiseModuleInternal:add(stdModule) -- Standard deviation σ
+  noiseModuleInternal:add(nn.Gaussian(0, 1)) -- Sample noise ε ~ N(0, 1)
+  noiseModule:add(noiseModuleInternal)
+  noiseModule:add(nn.CMulTable()) -- Compute σε
+
+  -- Create sampler q(z) = N(z; μ, σI) = μ + σε (reparametrization trick)
+  local sampler = nn.Sequential()
+  local samplerInternal = nn.ParallelTable()
+  samplerInternal:add(nn.Identity()) -- Pass through μ 
+  samplerInternal:add(noiseModule) -- Create noise σ * ε
+  sampler:add(samplerInternal)
+  sampler:add(nn.CAddTable())
+
   -- Create decoder
-  -- expected input: 64 x 13 x 13
   self.decoder = nn.Sequential()
+  self.decoder:add(nn.SpatialFullConvolution(self.zSize, 64, 13, 13, 1, 1))
+  self.decoder:add(nn.Tanh())
+  -- out: 64 x 13 x 13
   self.decoder:add(nn.SpatialFullConvolution(64, 128, 3, 3, 1, 1, 1, 1))
   self.decoder:add(nn.Tanh())
   -- out: 128 x 13 x 13
@@ -93,6 +83,7 @@ function Model:createAutoencoder(X)
   -- Create autoencoder
   self.autoencoder = nn.Sequential()
   self.autoencoder:add(self.encoder)
+  self.autoencoder:add(sampler)
   self.autoencoder:add(self.decoder)
 end
 
