@@ -25,7 +25,6 @@ cmd:option('-batchSize', 64, 'Batch size');
 cmd:option('-epochs', 10000, 'Training epochs');
 -- data loading
 cmd:option('-datasetPath', '', 'Path for dataset folder')
-cmd:option('-nThreads', 2, '# of threads for data loading')
 -- optimizer
 cmd:option('-optimiser', 'adagrad | adam', 'Optimiser');
 cmd:option('-learningRate', 0.01, 'Learning rate');
@@ -100,7 +99,7 @@ local XTrain = torch.Tensor(opt.batchSize, sampleLength, sampleWidth, sampleHeig
 
 local function load_data_from_file(inputFileName)
 	local readFile = hdf5.open(paths.concat(opt.datasetPath, inputFileName), 'r');
-	local dim = readFile:read('/data'):dataspaceSize();
+	local dim = readFile:read('data'):dataspaceSize();
 	local numSamples = dim[1];
 	print_debug(('Reading data from %s : %d samples'):format(
 		inputFileName, numSamples))
@@ -108,7 +107,7 @@ local function load_data_from_file(inputFileName)
 	local data = {};
 	if 1 == opt.partial_learning or numSamples < opt.batchSize then
 		-- full read
-		data = readFile:read('/data'):all();
+		data = readFile:read('data'):all();
 	else
 		-- read at least one batch size
 		local load_size = math.max(opt.batchSize, math.floor(numSamples * opt.partial_learning))
@@ -253,7 +252,7 @@ autoencoder:training()
 
 -- for network saving
 paths.mkdir(opt.save_point)
-paths.mkdir(opt.save_point .. '/' .. opt.save_name)
+paths.mkdir(paths.concat(opt.save_point, opt.save_name))
 
 -- optimizer parameters
 optimState = {
@@ -329,7 +328,7 @@ for epoch = epoch_start, opt.epochs do
 				__, loss = optim.adagrad(feval, params, optimState)
 				print_debug(('optimize end, current loss: %.7f'):format(loss[1]))
 
-				losses[#losses + 1] = loss[1]
+				table.insert(losses, loss[1]);
 			end
 
 			start = start + loadSize;

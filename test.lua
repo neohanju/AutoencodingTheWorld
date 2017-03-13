@@ -1,39 +1,50 @@
+-- test script
+-- th test.lua -model ConvVAE -modelPath training_result/ConvVAE/net_epoch_17.t7 -datasetPath /home/mlpa/Workspace/dataset/VAE_anomally_detection/test 2>&1 | tee log_test_ConvVAE.log
+
 -- Load dependencies
-local mnist = require 'mnist';
 local optim = require 'optim';
 local gnuplot = require 'gnuplot';
 local image = require 'image';
+local display = require 'display';
 local hdf5 = require 'hdf5'
 local cuda = pcall(require, 'cutorch'); -- Use CUDA if available
 local hasCudnn, cudnn = pcall(require, 'cudnn'); -- Use cuDNN if available
-require 'dpnn';
+util = paths.dofile('util/util.lua')
+-- require 'dpnn';
 
+debug_display = false;
+local function print_debug(...)
+	if debug_display then print(...) end
+end
 
 --=============================================================================
 -- Command-line options
 --=============================================================================
 local cmd = torch.CmdLine();
 -- major parameters
-cmd:option('-model', 'ConvAE', 'Model: AE|SparseAE|DeepAE|ConvAE|UpconvAE|DenoisingAE|Seq2SeqAE|VAE|CatVAE|WTA-AE');
-cmd:option('-batchSize', 60, 'Batch size');
-cmd:option('-epochs', 20, 'Training epochs');
+cmd:option('-model', 'ConvVAE', 'Model: AE|SparseAE|DeepAE|ConvAE|UpconvAE|DenoisingAE|Seq2SeqAE|VAE|CatVAE|WTA-AE');
+cmd:option('-modelPath', '', 'Path to trained model');
+cmd:option('-batchSize', 1, 'Batch for testing (default: 1)')
 -- data loading
 cmd:option('-datasetPath', '', 'Path for dataset folder')
-cmd:option('-nThreads', 2, '# of threads for data loading')
--- others
-cmd:option('-denoising', false, 'Use denoising criterion');
-cmd:option('-mcmc', 0, 'MCMC samples');
-cmd:option('-sampleStd', 1, 'Standard deviation of Gaussian distribution to sample from');
 -- cpu / gpu
 cmd:option('-cpu', false, 'CPU only (useful if GPU memory is too low)');
+-- output
+cmd:option('-outputPath', 'test_result', 'Path for saving test results')
 
 local opt = cmd:parse(arg);
-if opt.cpu then
+assert(paths.filep(opt.modelPath), "Model path is not a proper one")
+assert(paths.dirp(opt.datasetPath), "There is not directory named " .. opt.datasetPath)
+
+if 1 == opt.cpu then
 	cuda = false;
+else
+	opt.gpu = 1;
 end
 if opt.model == 'DenoisingAE' then
 	opt.denoising = false; -- Disable "extra" denoising
 end
+if hasCudnn then opt.cudnn = 1 end
 print(opt)
 
 
@@ -50,31 +61,136 @@ end
 
 
 --=============================================================================
+-- Load data and Network
+--=============================================================================
+-- check file existance
+local inputFileList = {}
+for file in paths.files(opt.datasetPath, ".h5") do
+	table.insert(inputFileList, file);
+end
+assert(nil ~= next(inputFileList), "There is no proper input file at " .. opt.datasetPath)
+table.sort(inputFileList) -- ascending
+
+local XTrainFile = hdf5.open(paths.concat(opt.datasetPath, inputFileList[1]), 'r');
+local dataDim = XTrainFile:read('/data'):dataspaceSize()
+XTrainFile:close();
+local sampleLength, sampleWidth, sampleHeight = dataDim[2], dataDim[3], dataDim[4]
+print(('Data dim: %d x %d x %d'):format(sampleLength, sampleHeight, sampleWidth))
+
+local function load_data_from_file(inputFileName)
+	local readFile = hdf5.open(paths.concat(opt.datasetPath, inputFileName), 'r');
+	local dim = readFile:read('data'):dataspaceSize();
+	local numSamples = dim[1];
+	print_debug(('Reading data from %s : %d samples'):format(
+		inputFileName, numSamples))
+	local data = readFile:read('data'):all();
+	readFile:close();
+
+	return data
+end
+
+-- load model
+if 'ConvVAE' == opt.model then
+	require 'modules/Gaussian'
+end
+Model = util.load_model(opt.modelPath, opt)
+local autoencoder = Model.autoencoder;
+
+--=============================================================================
+-- Data buffer and GPU
+--=============================================================================
+local x    = torch.Tensor(opt.batchSize, sampleLength, sampleHeight, sampleWidth)
+local xHat = torch.Tensor(opt.batchSize, sampleLength, sampleHeight, sampleWidth)
+
+if cuda then
+	print('Transferring to gpu...')
+	require 'cunn'
+	cutorch.setDevice(opt.gpu)
+	
+	-- data buffer
+	x    = x:cuda()
+	xHat = xHat:cuda()
+
+	-- network
+	autoencoder:cuda();
+	print(autoencoder)
+	
+	print('done')
+else
+	print('Running model on CPU')
+end
+
+--=============================================================================
 -- Test
 --=============================================================================
-print('Testing')
-x = XTest:narrow(1, 1, 10)
-local xHat
-if opt.model == 'DenoisingAE' then
-	-- Normally this should be switched to evaluation mode, but this lets us extract the noised version
-	xHat = autoencoder:forward(x)
-	-- Extract noised version from denoising AE
-	x = Model.noiser.output
-else
-	autoencoder:evaluate()
-	xHat = autoencoder:forward(x)
+-- for result saving
+local output_dir = paths.concat(opt.outputPath, opt.model)
+paths.mkdir(opt.outputPath)
+paths.mkdir(output_dir)
+
+print('Testing...')
+autoencoder:evaluate()
+
+local function get_scenario_string(input_string)
+	-- parsing scenario part: [SCENARIO_NAME]_video_[NUMBER]
+	count = 0;
+	local scenario_string = ''
+	for token in string.gmatch(input_string, "[^%s_]+") do
+		scenario_string = scenario_string .. token
+		count = count + 1;
+		if 3 > count then 
+			scenario_string = scenario_string .. '_'
+		else
+			break 
+		end
+	end
+	return scenario_string;
+end
+
+for k = 1, #inputFileList do
+	print('Test with ' .. inputFileList[k])
+	local inputScenario = get_scenario_string(inputFileList[k])
+
+	-- load data
+	data = load_data_from_file(inputFileList[k]);
+	local numSamples = data:size(1)
+	local costs = {};
+	for i = 1, numSamples, opt.batchSize do
+		x:copy(data:sub(i,i+opt.batchSize-1))
+		xHat = autoencoder:forward(x)
+
+		-- reconstruction cost
+		local cur_cost = torch.norm(xHat - x);
+		table.insert(costs, cur_cost);
+	end
+
+	-- save to text file
+	local text_file = io.open(paths.concat(output_dir, ('%s_%s.txt'):format(inputScenario, opt.model)), 'w')
+	for i = 1, #costs do
+		text_file:write(("%.18e\n"):format(costs[i]));
+	end
+	text_file:close();
+
+	-- Plot training curve(s)
+	local plots = {{'Reconstruction costs', torch.linspace(1, #costs, #costs), torch.Tensor(costs), '-'}}
+	gnuplot.pngfigure(paths.concat(output_dir, (inputScenario .. '_costs.png')))
+	gnuplot.plot(table.unpack(plots))
+	gnuplot.ylabel('Cost')
+	gnuplot.xlabel('Time (sample index)')
+	gnuplot.plotflush()
+	gnuplot.close()
 end
 
 
---=============================================================================
--- Plot reconstructions
---=============================================================================
-image.save('Reconstructions.png', torch.cat(image.toDisplayTensor(x, 2, 10), image.toDisplayTensor(xHat, 2, 10), 1))
+-- --=============================================================================
+-- -- Plot reconstructions
+-- --=============================================================================
+-- image.save('Reconstructions.png', torch.cat(image.toDisplayTensor(x, 2, 10), image.toDisplayTensor(xHat, 2, 10), 1))
 
-if opt.model == 'AE' or opt.model == 'SparseAE' or opt.model == 'WTA-AE' then
-	-- Plot filters
-	image.save('Weights.png', image.toDisplayTensor(Model.decoder:findModules('nn.Linear')[1].weight:view(x:size(3), x:size(2), Model.features):transpose(1, 3), 1, math.floor(math.sqrt(Model.features))))
-end
+-- if opt.model == 'AE' or opt.model == 'SparseAE' or opt.model == 'WTA-AE' then
+-- 	-- Plot filters
+-- 	image.save('Weights.png', image.toDisplayTensor(Model.decoder:findModules('nn.Linear')[1].weight:view(x:size(3), x:size(2), Model.features):transpose(1, 3), 1, math.floor(math.sqrt(Model.features))))
+-- end
 
 -- if opt.model == 'VAE' then
 -- 	if opt.denoising then
