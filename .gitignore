@@ -30,6 +30,6 @@ Thumbs.db
 
 # data folders #
 ######################
-./test_result/*
-./training_result/*
-
+test_result/
+training_result/
+dataset/
