@@ -33,3 +33,7 @@ Thumbs.db
 test_result/
 training_result/
 dataset/
+
+# image file #
+######################
+*.png
