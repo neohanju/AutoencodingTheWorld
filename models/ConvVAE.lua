@@ -2,7 +2,7 @@ local nn = require 'nn'
 require '../modules/Gaussian'
 
 local Model = {
-  zSize = 200
+  zSize = 500
 }
 
 function Model:createAutoencoder(X)

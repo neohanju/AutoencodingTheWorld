@@ -25,6 +25,7 @@ cmd:option('-batchSize', 64, 'Batch size');
 cmd:option('-epochs', 10000, 'Training epochs');
 -- data loading
 cmd:option('-datasetPath', '', 'Path for dataset folder')
+cmd:option('-sequence', 'all', 'Target sequence to train')
 -- optimizer
 cmd:option('-optimiser', 'adagrad | adam', 'Optimiser');
 cmd:option('-learningRate', 0.01, 'Learning rate');
@@ -86,7 +87,9 @@ local file_tm = torch.Timer()
 -- check file existance
 local inputFileList = {}
 for file in paths.files(opt.datasetPath, ".h5") do
-	table.insert(inputFileList, file);
+	if 'all' == opt.sequence or string.find(file, opt.sequence) then
+		table.insert(inputFileList, file);
+	end
 end
 assert(nil ~= next(inputFileList), "There is no proper input file at " .. opt.datasetPath)
 
@@ -137,13 +140,13 @@ local function weights_init(m)
 	end
 end
 
-if 'ConvVAE' == opt.model then
-	require 'modules/Gaussian'
-end
-
 -- generate model
 print('Prepare the model...')
-if opt.continue_train then	
+if opt.continue_train then
+	if 'ConvVAE' == opt.model then
+		require 'modules/Gaussian'
+	end
+
 	-- find the latest network
 	local netFileList = {}
 	for file in paths.files(paths.concat(opt.save_point, opt.save_name), ".t7") do
@@ -239,6 +242,18 @@ local feval = function(params)
 	-- Backpropagation
 	local gradLoss = criterion:backward(batchOutput, batchInput);
 	autoencoder:backward(batchInput, gradLoss);
+
+	if opt.model == 'ConvVAE' or opt.model == 'VAE' then
+	    -- Optimise Gaussian KL divergence between inference model and prior: DKL[q(z|x)||N(0, σI)] = log(σ2/σ1) + ((σ1^2 - σ2^2) + (μ1 - μ2)^2) / 2σ2^2
+	    local nElements = batchOutput:nElement()
+	    local mean, logVar = table.unpack(Model.encoder.output)
+	    local var = torch.exp(logVar)
+	    local KLLoss = 0.5 * torch.sum(torch.pow(mean, 2) + var - logVar - 1)
+	    KLLoss = KLLoss / nElements -- Normalise loss (same normalisation as BCECriterion)
+	    loss = loss + KLLoss
+	    local gradKLLoss = {mean / nElements, 0.5*(var - 1) / nElements}  -- Normalise gradient of loss (same normalisation as BCECriterion)
+	    Model.encoder:backward(batchInput, gradKLLoss)
+	end
 
 	return loss, gradParams
 end
