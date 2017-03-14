@@ -214,8 +214,7 @@ if cuda then
 			return torch.type(module):find('SpatialMaxPooling') -- to associate with maxUnpooling
 		end)
 		-- autoencoder = util.cudnn(autoencoder)
-		-- encoder = util.cudnn(encoder)
-		print(autoencoder)
+		-- encoder = util.cudnn(encoder
 	end
 	autoencoder:cuda();
 
@@ -226,6 +225,11 @@ if cuda then
 else
 	print('Running model on CPU')
 end
+
+print('Autoencoder summary')
+print(autoencoder)
+print('Encoder summary')
+print(encoder)
 
 -- Get parameters
 local params, gradParams = autoencoder:getParameters();
@@ -358,17 +362,22 @@ for epoch = epoch_start, opt.epochs do
 			count = count + 1;
 		end
 
-		print(('Epoch: [%d][%3d/%3d]   Batches: %3d, Batch Time: %.2f, Acc.Time: %.2f, Loss: %.5f'):format(
-			epoch, k, #inputFileList, count, file_tm:time().real, tm:time().real, loss[1]))
+		if nil ~= loss then
+			print(('Epoch: [%d][%3d/%3d]   Batches: %3d, Batch Time: %.2f, Acc.Time: %.2f, Loss: %.5f'):format(
+				epoch, k, #inputFileList, count, file_tm:time().real, tm:time().real, loss[1]))
+		else
+			print(('Epoch: [%d][%3d/%3d]   Batches: %3d, Batch Time: %.2f, Acc.Time: %.2f, too small data for batch'):format(
+				epoch, k, #inputFileList, count, file_tm:time().real, tm:time().real))
+		end
 	end
 	
 	-- Plot training curve(s)
-	local plots = {{'Autoencoder', torch.linspace(1, #losses, #losses), torch.Tensor(losses), '-'}}
-	gnuplot.pngfigure('Training.png')
-	gnuplot.plot(table.unpack(plots))
-	gnuplot.ylabel('Loss')
-	gnuplot.xlabel('Batch #')
-	gnuplot.plotflush()
+	-- local plots = {{'Autoencoder', torch.linspace(1, #losses, #losses), torch.Tensor(losses), '-'}}
+	-- gnuplot.pngfigure('Training.png')
+	-- gnuplot.plot(table.unpack(plots))
+	-- gnuplot.ylabel('Loss')
+	-- gnuplot.xlabel('Batch #')
+	-- gnuplot.plotflush()
 
 	print(('End of epoch %d / %d \t Time Taken: %.3f secs'):format(
 		epoch, opt.epochs, epoch_tm:time().real))
