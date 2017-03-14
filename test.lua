@@ -1,5 +1,5 @@
 -- test script
--- th test.lua -model ConvVAE -modelPath training_result/ConvVAE/net_epoch_17.t7 -datasetPath /home/mlpa/Workspace/dataset/VAE_anomally_detection/test 2>&1 | tee log_test_ConvVAE.log
+-- th test.lua -model ConvVAE -modelPath training_result/ConvVAE/net_epoch_17.t7 -testdataPath /home/mlpa/Workspace/dataset/VAE_anomally_detection/test 2>&1 | tee log_test_ConvVAE.log
 
 -- Load dependencies
 local optim = require 'optim';
@@ -22,29 +22,39 @@ end
 --=============================================================================
 local cmd = torch.CmdLine();
 -- major parameters
-cmd:option('-model', 'ConvVAE', 'Model: AE|SparseAE|DeepAE|ConvAE|UpconvAE|DenoisingAE|Seq2SeqAE|VAE|CatVAE|WTA-AE');
-cmd:option('-modelPath', '', 'Path to trained model');
+cmd:option('-model', 'ConvVAE', 'Model: AE|SparseAE|DeepAE|ConvAE|UpconvAE|DenoisingAE|Seq2SeqAE|VAE|CatVAE|WTA-AE')
+cmd:option('-modelPath', '', 'Path to trained model')
 cmd:option('-batchSize', 1, 'Batch for testing (default: 1)')
 -- data loading
-cmd:option('-datasetPath', '', 'Path for dataset folder')
+cmd:option('-testdataPath', '', 'Path for test data folder')
 -- cpu / gpu
-cmd:option('-cpu', false, 'CPU only (useful if GPU memory is too low)');
+cmd:option('-cpu', false, 'CPU only (useful if GPU memory is too low)')
+cmd:option('-gpu', 1, 'GPU index')
 -- output
 cmd:option('-outputPath', 'test_result', 'Path for saving test results')
+-- display
+cmd:option('-display', 0, 'Whether use display or not')
+cmd:option('-display_freq', 3, 'Display frequency')
 
 local opt = cmd:parse(arg);
+
 assert(paths.filep(opt.modelPath), "Model path is not a proper one")
-assert(paths.dirp(opt.datasetPath), "There is not directory named " .. opt.datasetPath)
+-- because the below command cannot handle link
+-- assert(paths.dirp(opt.testdataPath), "There is not directory named " .. opt.testdataPath)
 
 if 1 == opt.cpu then
 	cuda = false;
 else
-	opt.gpu = 1;
+	cuda = true;	
 end
+if hasCudnn and cuda then 
+	opt.cudnn = 1 
+end
+
 if opt.model == 'DenoisingAE' then
 	opt.denoising = false; -- Disable "extra" denoising
 end
-if hasCudnn then opt.cudnn = 1 end
+
 print(opt)
 
 
@@ -65,20 +75,20 @@ end
 --=============================================================================
 -- check file existance
 local inputFileList = {}
-for file in paths.files(opt.datasetPath, ".h5") do
+for file in paths.files(opt.testdataPath, ".h5") do
 	table.insert(inputFileList, file);
 end
-assert(nil ~= next(inputFileList), "There is no proper input file at " .. opt.datasetPath)
+assert(nil ~= next(inputFileList), "There is no proper input file at " .. opt.testdataPath)
 table.sort(inputFileList) -- ascending
 
-local XTrainFile = hdf5.open(paths.concat(opt.datasetPath, inputFileList[1]), 'r');
+local XTrainFile = hdf5.open(paths.concat(opt.testdataPath, inputFileList[1]), 'r');
 local dataDim = XTrainFile:read('/data'):dataspaceSize()
 XTrainFile:close();
 local sampleLength, sampleWidth, sampleHeight = dataDim[2], dataDim[3], dataDim[4]
 print(('Data dim: %d x %d x %d'):format(sampleLength, sampleHeight, sampleWidth))
 
 local function load_data_from_file(inputFileName)
-	local readFile = hdf5.open(paths.concat(opt.datasetPath, inputFileName), 'r');
+	local readFile = hdf5.open(paths.concat(opt.testdataPath, inputFileName), 'r');
 	local dim = readFile:read('data'):dataspaceSize();
 	local numSamples = dim[1];
 	print_debug(('Reading data from %s : %d samples'):format(
@@ -162,6 +172,22 @@ for k = 1, #inputFileList do
 		-- reconstruction cost
 		local cur_cost = torch.norm(xHat - x);
 		table.insert(costs, cur_cost);
+
+		-- draw network result
+		if opt.display > 0 and i % opt.display_freq == 0 then					
+			local batch_index = math.max(1, math.floor(opt.batchSize * 0.5));
+			local frame_index = math.max(1, math.floor(sampleLength * 0.5));
+			print_debug(('input_frame (%d x %d x %d x %d) at %d'):format(
+				x:size(1), x:size(2), x:size(3), x:size(4), batch_index))
+			local input_frame = x[batch_index][frame_index];					
+			print_debug(('output_frame (%d x %d x %d x %d) at %d'):format(
+				xHat:size(1), xHat:size(2), xHat:size(3), xHat:size(4), batch_index))
+			local output_frame = xHat[batch_index][frame_index];
+			print_debug('display')
+
+			disp_in_win = display.image(input_frame, {win=disp_in_win, title='test input'})
+			disp_out_win = display.image(output_frame, {win=disp_out_win, title='test output'})
+		end
 	end
 
 	-- save to text file
@@ -171,14 +197,14 @@ for k = 1, #inputFileList do
 	end
 	text_file:close();
 
-	-- Plot training curve(s)
-	local plots = {{'Reconstruction costs', torch.linspace(1, #costs, #costs), torch.Tensor(costs), '-'}}
-	gnuplot.pngfigure(paths.concat(output_dir, (inputScenario .. '_costs.png')))
-	gnuplot.plot(table.unpack(plots))
-	gnuplot.ylabel('Cost')
-	gnuplot.xlabel('Time (sample index)')
-	gnuplot.plotflush()
-	gnuplot.close()
+	-- -- Plot training curve(s)
+	-- local plots = {{'Reconstruction costs', torch.linspace(1, #costs, #costs), torch.Tensor(costs), '-'}}
+	-- gnuplot.pngfigure(paths.concat(output_dir, (inputScenario .. '_costs.png')))
+	-- gnuplot.plot(table.unpack(plots))
+	-- gnuplot.ylabel('Cost')
+	-- gnuplot.xlabel('Time (sample index)')
+	-- gnuplot.plotflush()
+	-- gnuplot.close()
 end
 
 

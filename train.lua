@@ -1,6 +1,6 @@
 -- script example:
 --$ th -ldisplay.start 8000 0.0.0.0
---$ nohup th train.lua -datasetPath ./dataset/VAE_anomally_detection -sequence enter -model ConvVAE -continue_train 1 2>&1 | tee enter_train.log
+--$ nohup th train.lua -datasetPath ./dataset/train -model ConvVAE -coefL2 0.5 -display 1 -max_iter 150000 2>&1 | tee enter_train.log
 
 -- Load dependencies
 local optim = require 'optim';
@@ -45,8 +45,12 @@ cmd:option('-weightDecay', 0.0005, 'Weight decay coefficient for regularization'
 cmd:option('-denoising', 0, 'Use denoising criterion');
 cmd:option('-mcmc', 0, 'MCMC samples');
 cmd:option('-sampleStd', 1, 'Standard deviation of Gaussian distribution to sample from');
+-- display
+cmd:option('-display', 0, 'Whether use display or not')
+cmd:option('-display_freq', 3, 'Display frequency')
 -- cpu / gpu
 cmd:option('-cpu', 0, 'CPU only (useful if GPU memory is too low)');
+cmd:option('-gpu', 1, 'GPU index')
 -- save
 cmd:option('-save_epoch_freq', 1, "network saving frequency with epoch number")
 cmd:option('-save_iter_freq', 500, "network saving frequency with iteration number")
@@ -54,23 +58,32 @@ cmd:option('-save_point', './training_result', "path to trained network")
 cmd:option('-save_name', '', 'name for saving')
 
 local opt = cmd:parse(arg);
+
+-- because the below command cannot handle link
+-- assert(paths.dirp(opt.datasetPath), "There is not directory named " .. opt.datasetPath)
+
 if 1 == opt.cpu then
 	cuda = false;
 else
-	opt.gpu = 1;
+	cuda = true;	
 end
+if hasCudnn and cuda then 
+	opt.cudnn = 1 
+end
+
 if opt.model == 'DenoisingAE' then
 	opt.denoising = false; -- Disable "extra" denoising
 end
+
 if 1 == opt.continue_train then
 	opt.continue_train = true;
 else
 	opt.continue_train = false;
 end
+
 if '' == opt.save_name then
 	opt.save_name = opt.model
 end
-if hasCudnn then opt.cudnn = 1 end
 print(opt)
 
 
@@ -199,8 +212,8 @@ local softmax = nn.SoftMax() -- Softmax for CatVAE KL divergence
 --=============================================================================
 -- Data buffer and GPU
 --=============================================================================
-local batchInput  = torch.Tensor(opt.batchSize, sampleLength, sampleHeight, sampleWidth)
-local batchOutput = torch.Tensor(opt.batchSize, sampleLength, sampleHeight, sampleWidth)
+local inputs  = torch.Tensor(opt.batchSize, sampleLength, sampleHeight, sampleWidth)
+local outputs = torch.Tensor(opt.batchSize, sampleLength, sampleHeight, sampleWidth)
 
 if cuda then
 	print('Transferring to gpu...')
@@ -208,8 +221,8 @@ if cuda then
 	cutorch.setDevice(opt.gpu)
 	
 	-- data buffer
-	batchInput  = batchInput:cuda()
-	batchOutput = batchOutput:cuda()
+	inputs  = inputs:cuda()
+	outputs = outputs:cuda()
 
 	-- network
 	if hasCudnn then
@@ -220,8 +233,7 @@ if cuda then
 		cudnn.convert(autoencoder, cudnn, function(module)
 			return torch.type(module):find('SpatialMaxPooling') -- to associate with maxUnpooling
 		end)
-		-- autoencoder = util.cudnn(autoencoder)
-		-- encoder = util.cudnn(encoder
+		-- autoencoder = util.cudnn(autoencoder)		
 	end
 	autoencoder:cuda();
 
@@ -258,23 +270,23 @@ local feval = function(x)
 	gradParams:zero()
 
 	-- evaluate function for complete mini batch
-	batchOutput = autoencoder:forward(batchInput); -- Reconstruction
-	local loss = criterion:forward(batchOutput, batchInput); -- target = batchOutput
+	outputs = autoencoder:forward(inputs); -- Reconstruction
+	local loss = criterion:forward(outputs, inputs); -- target = inputs
 
 	-- estimate df/dW
-	local gradLoss = criterion:backward(batchOutput, batchInput);
-	autoencoder:backward(batchInput, gradLoss);
+	local gradLoss = criterion:backward(outputs, inputs);
+	autoencoder:backward(inputs, gradLoss);
 
 	if opt.model == 'ConvVAE' or opt.model == 'VAE' then
 	    -- Optimise Gaussian KL divergence between inference model and prior: DKL[q(z|x)||N(0, σI)] = log(σ2/σ1) + ((σ1^2 - σ2^2) + (μ1 - μ2)^2) / 2σ2^2
-	    local nElements = batchOutput:nElement()
+	    local nElements = outputs:nElement()
 	    local mean, logVar = table.unpack(Model.encoder.output)
 	    local var = torch.exp(logVar)
 	    local KLLoss = 0.5 * torch.sum(torch.pow(mean, 2) + var - logVar - 1)
 	    KLLoss = KLLoss / nElements -- Normalise loss (same normalisation as BCECriterion)
 	    loss = loss + KLLoss
 	    local gradKLLoss = {mean / nElements, 0.5*(var - 1) / nElements}  -- Normalise gradient of loss (same normalisation as BCECriterion)
-	    Model.encoder:backward(batchInput, gradKLLoss)
+	    Model.encoder:backward(inputs, gradKLLoss)
 	end
 
 	-- penalties (L1 and L2): reference -> https://github.com/torch/demos/blob/master/train-a-digit-classifier/train-on-mnist.lua#L214
@@ -321,7 +333,7 @@ optimState = {
 local loss_graph_config = {
 	title = "Training losses",	
 	xlabel = "Batch #",
-	ylabel = "loss",
+	ylabel = "loss"
 }
 
 local __, loss
@@ -352,9 +364,10 @@ for epoch = 1, opt.epochs do
 
 		local start = 1;
 		local file_count = 1;
+		local prev_iter = iter_count;
 		while continue_training do
 
-		-- for start = leftDataLength+1, data:size(1), opt.batchSize do
+			-- for start = leftDataLength+1, data:size(1), opt.batchSize do
 			print_debug(('start: %d'):format(start))
 
 			-- get minibatch
@@ -370,9 +383,9 @@ for epoch = 1, opt.epochs do
 
 				if  0 == leftDataLength then
 					-- save and skip
-					batchInput:sub(1, loadSize):copy(loadedData);
+					inputs:sub(1, loadSize):copy(loadedData);
 				else
-					batchInput:sub(leftDataLength + 1, readySize):copy(loadedData);					
+					inputs:sub(leftDataLength + 1, readySize):copy(loadedData);					
 				end
 				leftDataLength = readySize;
 				print_debug(('left sample: %d'):format(leftDataLength))
@@ -384,7 +397,7 @@ for epoch = 1, opt.epochs do
 					print_debug('full batch')
 				end
 
-				batchInput:sub(leftDataLength + 1, readySize):copy(loadedData);
+				inputs:sub(leftDataLength + 1, readySize):copy(loadedData);
 				leftDataLength = 0;
 				
 				-- Optimize -----------------------------------------------------
@@ -392,15 +405,24 @@ for epoch = 1, opt.epochs do
 				__, loss = optim.adagrad(feval, params, optimState)
 				print_debug(('optimize end, current loss: %.7f'):format(loss[1]))
 				iter_count = iter_count + 1;
-				-----------------------------------------------------------------
+				-----------------------------------------------------------------	
 
 				-- draw network result
-				local input_frame = batchInput[1][math.floor(opt.batchSize * 0.5)];
-				local output_frame = batchOutput[1][math.floor(opt.batchSize * 0.5)];
-				disp_in_win = display.image(input_frame, {win=disp_in_win, title='input frame at iter ' .. iter_count})
-				disp_out_win = display.image(output_frame, {win=disp_out_win, title='output frame at iter ' .. iter_count})
+				if opt.display > 0 and iter_count % opt.display_freq == 0 then					
+					local batch_index = math.max(1, math.floor(opt.batchSize * 0.5));
+					local frame_index = math.max(1, math.floor(sampleLength * 0.5));
+					print_debug(('input_frame (%d x %d x %d x %d) at %d'):format(
+						inputs:size(1), inputs:size(2), inputs:size(3), inputs:size(4), batch_index))
+					local input_frame = inputs[batch_index][frame_index];					
+					print_debug(('output_frame (%d x %d x %d x %d) at %d'):format(
+						outputs:size(1), outputs:size(2), outputs:size(3), outputs:size(4), batch_index))
+					local output_frame = outputs[batch_index][frame_index];
+					print_debug('display')
+					disp_in_win = display.image(input_frame, {win=disp_in_win, title='input frame at iter ' .. iter_count})
+					disp_out_win = display.image(output_frame, {win=disp_out_win, title='output frame at iter ' .. iter_count})
+				end
 
-				-- print log to console
+				-- save network
 				if epoch % opt.save_epoch_freq == 0 then		
 					torch.save(paths.concat(opt.save_point, opt.save_name, ('%s_iter_%05d.t7'):format(opt.model, iter_count)),
 						autoencoder:clearState())
@@ -424,12 +446,21 @@ for epoch = 1, opt.epochs do
 						
 		end
 
+		-- print log to console
 		if nil ~= loss then
-			print(('Epoch: [%d][%3d/%3d] Iteration: %3d, File proc. time: %.2f, Loss: %.5f'):format(
-				epoch, k, #inputFileList, iter_count, file_tm:time().real, loss[1]))
+			print(('Epoch: [%d][%3d/%3d] Iteration: %5d (%2d), Total time: %5.2f, Loss: %.5f'):format(
+				epoch, k, #inputFileList, iter_count, iter_count - prev_iter, tm:time().real, loss[1]))
 		else
-			print(('Epoch: [%d][%3d/%3d]   Batches: %3d, Batch Time: %.2f, Acc.Time: %.2f, too small data for batch'):format(
-				epoch, k, #inputFileList, file_count, file_tm:time().real, tm:time().real))
+			print(('Epoch: [%d][%3d/%3d] too small data for batch'):format(
+				epoch, k, #inputFileList, file_count))
+		end
+
+		-- draw loss plot
+		if opt.display > 0 and #losses > 0 then
+			print_debug('Draw loss graph')
+			loss_graph_config.win = display.plot(
+				torch.cat(torch.linspace(1, #losses, #losses), torch.Tensor(losses), 2), 
+				loss_graph_config)
 		end
 	end
 	
@@ -440,10 +471,7 @@ for epoch = 1, opt.epochs do
 	-- gnuplot.ylabel('Loss')
 	-- gnuplot.xlabel('Batch #')
 	-- gnuplot.plotflush()
-	-- gnuplot.close()
-	loss_graph_config.win = display.plot(
-		torch.cat(torch.linspace(1, #losses, #losses), torch.Tensor(losses)), 
-		loss_graph_config)
+	-- gnuplot.close()	
 
 	print(('End of epoch %d / %d \t Time Taken: %.3f secs, Acc. Time: %.3f'):format(
 		epoch, opt.epochs, epoch_tm:time().real, tm:time().real))
