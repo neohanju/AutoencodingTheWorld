@@ -239,10 +239,10 @@ function util.load_model(filename, opt)
   local Model = {}
   Model.autoencoder = torch.load(filename)
 
-  if 'convAE' == opt.model then
+  if 'ConvAE' == opt.model then
     Model.encoder = Model.autoencoder.modules[1]
     Model.decoder = Model.autoencoder.modules[2]
-  elseif 'convVAE' == opt.model then
+  elseif 'ConvVAE' == opt.model then
     Model.encoder = Model.autoencoder.modules[1]
     Model.decoder = Model.autoencoder.modules[3]
   end
