@@ -1,3 +1,6 @@
+-- script example:
+-- nohup th train.lua -datasetPath ./dataset/VAE_anomally_detection -sequence enter -model ConvVAE -continue_train 1 2>&1 | tee enter_train.log
+
 -- Load dependencies
 local optim = require 'optim';
 local gnuplot = require 'gnuplot';
