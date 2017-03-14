@@ -100,7 +100,7 @@ local function load_data_from_file(inputFileName)
 end
 
 -- load model
-if 'ConvVAE' == opt.model then
+if string.find(opt.model, 'VAE') then
 	require 'modules/Gaussian'
 end
 Model = util.load_model(opt.modelPath, opt)
@@ -206,89 +206,6 @@ for k = 1, #inputFileList do
 	-- gnuplot.plotflush()
 	-- gnuplot.close()
 end
-
-
--- --=============================================================================
--- -- Plot reconstructions
--- --=============================================================================
--- image.save('Reconstructions.png', torch.cat(image.toDisplayTensor(x, 2, 10), image.toDisplayTensor(xHat, 2, 10), 1))
-
--- if opt.model == 'AE' or opt.model == 'SparseAE' or opt.model == 'WTA-AE' then
--- 	-- Plot filters
--- 	image.save('Weights.png', image.toDisplayTensor(Model.decoder:findModules('nn.Linear')[1].weight:view(x:size(3), x:size(2), Model.features):transpose(1, 3), 1, math.floor(math.sqrt(Model.features))))
--- end
-
--- if opt.model == 'VAE' then
--- 	if opt.denoising then
--- 		autoencoder:training() -- Retain corruption process
--- 	end
-
--- 	-- Plot interpolations
--- 	local height, width = XTest:size(2), XTest:size(3)
--- 	local interpolations = torch.Tensor(15 * height, 15 * width):typeAs(XTest)
--- 	local step = 0.05 -- Use small steps in dense region of 2D Gaussian; TODO: Move to spherical interpolation?
-
--- 	-- Sample 15 x 15 points
--- 	for i = 1, 15  do
--- 		for j = 1, 15 do
--- 			local sample = torch.Tensor({2 * i * step - 16 * step, 2 * j * step - 16 * step}):typeAs(XTest):view(1, 2) -- Minibatch of 1 for batch normalisation
--- 			interpolations[{{(i-1) * height + 1, i * height}, {(j-1) * width + 1, j * width}}] = Model.decoder:forward(sample)
--- 		end
--- 	end
--- 	image.save('Interpolations.png', interpolations)
-
--- 	-- Plot samples
--- 	local output = Model.decoder:forward(torch.Tensor(15 * 15, 2):normal(0, opt.sampleStd):typeAs(XTest)):clone()
-
--- 	-- Perform MCMC sampling
--- 	for m = 0, opt.mcmc do
--- 		-- Save samples
--- 		if m == 0 then
--- 			image.save('Samples.png', image.toDisplayTensor(Model.decoder.output, 0, 15))
--- 		else
--- 			image.save('Samples (MCMC step ' .. m .. ').png', image.toDisplayTensor(Model.decoder.output, 0, 15))
--- 		end
-
--- 		-- Forward again
--- 		autoencoder:forward(output)
--- 	end
--- elseif opt.model == 'CatVAE' then
--- 	if opt.denoising then
--- 		autoencoder:training() -- Retain corruption process
--- 	end
-
--- 	-- Plot "interpolations"
--- 	local height, width = XTest:size(2), XTest:size(3)
--- 	local interpolations = torch.Tensor(Model.N * height, Model.k * width):typeAs(XTest)
-
--- 	for n = 1, Model.N do
--- 		for k = 1, Model.k do
--- 			local sample = torch.zeros(Model.N, Model.k):typeAs(XTest)
--- 			sample[{{}, {1}}] = 1 -- Start with first dimension "set"
--- 			sample[n] = 0 -- Zero out distribution
--- 			sample[n][k] = 1 -- "Set" cluster
--- 			interpolations[{{(n-1) * height + 1, n * height}, {(k-1) * width + 1, k * width}}] = Model.decoder:forward(sample:view(1, Model.N * Model.k)) -- Minibatch of 1 for batch normalisation
--- 		end
--- 	end
--- 	image.save('Interpolations.png', interpolations)
-
--- 	-- Plot samples
--- 	local samples = torch.Tensor(15 * 15 * Model.N, Model.k):bernoulli(1 / Model.k):typeAs(XTest):view(15 * 15, Model.N * Model.k)
--- 	local output = Model.decoder:forward(samples):clone()
-
--- 	-- Perform MCMC sampling
--- 	for m = 0, opt.mcmc do
--- 		-- Save samples
--- 		if m == 0 then
--- 			image.save('Samples.png', image.toDisplayTensor(Model.decoder.output, 0, 15))
--- 		else
--- 			image.save('Samples (MCMC step ' .. m .. ').png', image.toDisplayTensor(Model.decoder.output, 0, 15))
--- 		end
-
--- 		-- Forward again
--- 		autoencoder:forward(output)
--- 	end
--- end
 
 -- ()()
 -- ('') HAANJU.YOO

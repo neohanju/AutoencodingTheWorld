@@ -242,7 +242,7 @@ function util.load_model(filename, opt)
   if 'ConvAE' == opt.model then
     Model.encoder = Model.autoencoder.modules[1]
     Model.decoder = Model.autoencoder.modules[2]
-  elseif 'ConvVAE' == opt.model then
+  elseif string.find(opt.model, 'VAE') then
     Model.encoder = Model.autoencoder.modules[1]
     Model.decoder = Model.autoencoder.modules[3]
   end

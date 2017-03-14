@@ -166,7 +166,7 @@ end
 -- generate model
 print('Prepare the model...')
 if opt.continue_train then
-	if 'ConvVAE' == opt.model then
+	if string.find(opt.model, 'VAE') then
 		require 'modules/Gaussian'
 	end
 
@@ -428,10 +428,12 @@ for epoch = 1, opt.epochs do
 				end
 
 				-- save network
-				if epoch % opt.save_epoch_freq == 0 then		
+				if iter_count % opt.save_iter_freq == 0 then		
 					torch.save(paths.concat(opt.save_point, opt.save_name, ('%s_iter_%05d.t7'):format(opt.model, iter_count)),
 						autoencoder:clearState())
 				end
+				torch.save(paths.concat(opt.save_point, opt.save_name, ('%s_latest.t7'):format(opt.model)),
+						autoencoder:clearState())
 
 				if iter_count >= opt.max_iter then
 					continue_training = false;
