@@ -234,7 +234,9 @@ if cuda then
 		if opt.model == 'ConvAE' or opt.model == 'ConvVAE' then
 			cudnn.convert(autoencoder, cudnn, function(module)
 				return torch.type(module):find('SpatialMaxPooling') -- to associate with maxUnpooling
-			end)
+			end);
+		else
+			cudnn.convert(autoencoder, cudnn);
 		end
 		-- autoencoder = util.cudnn(autoencoder)		
 	end
