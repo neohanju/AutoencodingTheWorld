@@ -1,5 +1,6 @@
 -- script example:
--- nohup th train.lua -datasetPath ./dataset/VAE_anomally_detection -sequence enter -model ConvVAE -continue_train 1 2>&1 | tee enter_train.log
+--$ th -ldisplay.start 8000 0.0.0.0
+--$ nohup th train.lua -datasetPath ./dataset/VAE_anomally_detection -sequence enter -model ConvVAE -continue_train 1 2>&1 | tee enter_train.log
 
 -- Load dependencies
 local optim = require 'optim';
@@ -22,10 +23,17 @@ end
 -- Command-line options
 --=============================================================================
 local cmd = torch.CmdLine();
--- major parameters
+-- model
 cmd:option('-model', 'ConvAE', 'Model: AE|SparseAE|DeepAE|ConvAE|UpconvAE|DenoisingAE|Seq2SeqAE|VAE|CatVAE|WTA-AE');
+cmd:option('-coefL1', 0, 'Param for L1 regularization on the weights')
+cmd:option('-coefL2', 0, 'Param for L1 regularization on the weights')
+-- training
 cmd:option('-batchSize', 64, 'Batch size');
-cmd:option('-epochs', 10000, 'Training epochs');
+cmd:option('-epochs', 1000, 'Training epochs');
+cmd:option('-max_iter', 200000, 'Maximum iteration number')
+cmd:option('-partial_learning', 1, "Learing with partial data, but at least one sample from the file")
+-- network loading
+cmd:option('-continue_train', 0, "if continue training, load the latest model: true, false")
 -- data loading
 cmd:option('-datasetPath', '', 'Path for dataset folder')
 cmd:option('-sequence', 'all', 'Target sequence to train')
@@ -39,11 +47,9 @@ cmd:option('-mcmc', 0, 'MCMC samples');
 cmd:option('-sampleStd', 1, 'Standard deviation of Gaussian distribution to sample from');
 -- cpu / gpu
 cmd:option('-cpu', 0, 'CPU only (useful if GPU memory is too low)');
--- control
-cmd:option('-continue_train', 0, "if continue training, load the latest model: true, false")
-cmd:option('-partial_learning', 1, "Learing with partial data, but at least one sample from the file")
 -- save
-cmd:option('-save_epoch_freq', 1, "network saving frequency")
+cmd:option('-save_epoch_freq', 1, "network saving frequency with epoch number")
+cmd:option('-save_iter_freq', 500, "network saving frequency with iteration number")
 cmd:option('-save_point', './training_result', "path to trained network")
 cmd:option('-save_name', '', 'name for saving')
 
@@ -91,10 +97,11 @@ local file_tm = torch.Timer()
 local inputFileList = {}
 for file in paths.files(opt.datasetPath, ".h5") do
 	if 'all' == opt.sequence or string.find(file, opt.sequence) then
-		table.insert(inputFileList, file);
+		table.insert(inputFileList, file);		
 	end
 end
 assert(nil ~= next(inputFileList), "There is no proper input file at " .. opt.datasetPath)
+print_debug(inputFileList);
 
 local XTrainFile = hdf5.open(paths.concat(opt.datasetPath, inputFileList[1]), 'r');
 local dataDim = XTrainFile:read('/data'):dataspaceSize()
@@ -163,16 +170,16 @@ if opt.continue_train then
 		end)
 
 	for token in string.gmatch(netFileList[1], "[%d]+") do
-		epoch_start = tonumber(token) + 1;
+		iter_start = tonumber(token);
 		break;
 	end
-	print(('load model from %s with epoch at %d'):format(netFileList[1], epoch_start))
+	print(('load model from %s with iteration %d'):format(netFileList[1], iter_start))
 
 	Model = util.load_model(paths.concat(opt.save_point, opt.save_name, netFileList[1]), opt)
 else
 	Model = require ('models/' .. opt.model);
 	Model:createAutoencoder(XTrain);
-	epoch_start = 1;
+	iter_start = 1;
 end
 
 -- if opt.denoising then
@@ -237,16 +244,24 @@ local params, gradParams = autoencoder:getParameters();
 --=============================================================================
 -- Create optimiser function evaluation
 --=============================================================================
-local feval = function(params)
+local feval = function(x)
 
-	-- Zero gradients
+	-- just in case:
+	collectgarbage()
+
+	-- get new parameters
+	if x ~= params then
+		params:copy(x)
+	end
+
+	-- reset gradients
 	gradParams:zero()
 
-	-- Reconstruction phase
-	-- Forward propagation
+	-- evaluate function for complete mini batch
 	batchOutput = autoencoder:forward(batchInput); -- Reconstruction
-	local loss = criterion:forward(batchOutput, batchInput); -- xHat = batchOutput
-	-- Backpropagation
+	local loss = criterion:forward(batchOutput, batchInput); -- target = batchOutput
+
+	-- estimate df/dW
 	local gradLoss = criterion:backward(batchOutput, batchInput);
 	autoencoder:backward(batchInput, gradLoss);
 
@@ -260,6 +275,26 @@ local feval = function(params)
 	    loss = loss + KLLoss
 	    local gradKLLoss = {mean / nElements, 0.5*(var - 1) / nElements}  -- Normalise gradient of loss (same normalisation as BCECriterion)
 	    Model.encoder:backward(batchInput, gradKLLoss)
+	end
+
+	-- penalties (L1 and L2): reference -> https://github.com/torch/demos/blob/master/train-a-digit-classifier/train-on-mnist.lua#L214
+	if opt.coefL1 ~= 0 then
+		
+		-- Loss:
+		loss = loss + opt.coefL1 * torch.norm(params, 1)
+		
+		-- Gradients:
+		gradParams:add(torch.sign(params):mul(opt.coefL1))
+
+	end
+	if opt.coefL2 ~= 0 then
+		
+		-- Loss:
+		loss = loss + opt.coefL2 * torch.norm(params, 2)^2 / 2
+		
+		-- Gradients:
+		gradParams:add(params:clone():mul(opt.coefL2))
+
 	end
 
 	return loss, gradParams
@@ -282,13 +317,21 @@ optimState = {
 	weightDecay  = opt.weightDecay,
 }
 
+-- display setting
+local loss_graph_config = {
+	title = "Training losses",	
+	xlabel = "Batch #",
+	ylabel = "loss",
+}
+
 local __, loss
 local losses = {}
 -- to make a consistant data size
-local leftDataLength = 0
+local leftDataLength = 0;
 
-
-for epoch = epoch_start, opt.epochs do
+local iter_count = iter_start;
+local continue_training = true;
+for epoch = 1, opt.epochs do
 	epoch_tm:reset()
 
 	-- shufflie the input file list
@@ -308,8 +351,8 @@ for epoch = epoch_start, opt.epochs do
 		print_debug(('left sample before loop: %d'):format(leftDataLength))
 
 		local start = 1;
-		local count = 1;
-		while true do
+		local file_count = 1;
+		while continue_training do
 
 		-- for start = leftDataLength+1, data:size(1), opt.batchSize do
 			print_debug(('start: %d'):format(start))
@@ -335,7 +378,6 @@ for epoch = epoch_start, opt.epochs do
 				print_debug(('left sample: %d'):format(leftDataLength))
 			else
 				-- batch size
-
 				if leftDataLength > 0 then
 					print_debug(('left samples: %d, loaded sampled: %d'):format(leftDataLength, loadSize))
 				else
@@ -345,10 +387,29 @@ for epoch = epoch_start, opt.epochs do
 				batchInput:sub(leftDataLength + 1, readySize):copy(loadedData);
 				leftDataLength = 0;
 				
-				-- Optimize
+				-- Optimize -----------------------------------------------------
 				print_debug('optimize start')
 				__, loss = optim.adagrad(feval, params, optimState)
 				print_debug(('optimize end, current loss: %.7f'):format(loss[1]))
+				iter_count = iter_count + 1;
+				-----------------------------------------------------------------
+
+				-- draw network result
+				local input_frame = batchInput[1][math.floor(opt.batchSize * 0.5)];
+				local output_frame = batchOutput[1][math.floor(opt.batchSize * 0.5)];
+				disp_in_win = display.image(input_frame, {win=disp_in_win, title='input frame at iter ' .. iter_count})
+				disp_out_win = display.image(output_frame, {win=disp_out_win, title='output frame at iter ' .. iter_count})
+
+				-- print log to console
+				if epoch % opt.save_epoch_freq == 0 then		
+					torch.save(paths.concat(opt.save_point, opt.save_name, ('%s_iter_%05d.t7'):format(opt.model, iter_count)),
+						autoencoder:clearState())
+				end
+
+				if iter_count >= opt.max_iter then
+					continue_training = false;
+					print(('End of training with the maximum iteration number: %d'):format(iter_count));
+				end
 
 				table.insert(losses, loss[1]);
 			end
@@ -359,15 +420,16 @@ for epoch = epoch_start, opt.epochs do
 				print_debug(('loop end with start = %d'):format(start))
 				break
 			end
-			count = count + 1;
+			file_count = file_count + 1;
+						
 		end
 
 		if nil ~= loss then
-			print(('Epoch: [%d][%3d/%3d]   Batches: %3d, Batch Time: %.2f, Acc.Time: %.2f, Loss: %.5f'):format(
-				epoch, k, #inputFileList, count, file_tm:time().real, tm:time().real, loss[1]))
+			print(('Epoch: [%d][%3d/%3d] Iteration: %3d, File proc. time: %.2f, Loss: %.5f'):format(
+				epoch, k, #inputFileList, iter_count, file_tm:time().real, loss[1]))
 		else
 			print(('Epoch: [%d][%3d/%3d]   Batches: %3d, Batch Time: %.2f, Acc.Time: %.2f, too small data for batch'):format(
-				epoch, k, #inputFileList, count, file_tm:time().real, tm:time().real))
+				epoch, k, #inputFileList, file_count, file_tm:time().real, tm:time().real))
 		end
 	end
 	
@@ -378,14 +440,18 @@ for epoch = epoch_start, opt.epochs do
 	-- gnuplot.ylabel('Loss')
 	-- gnuplot.xlabel('Batch #')
 	-- gnuplot.plotflush()
+	-- gnuplot.close()
+	loss_graph_config.win = display.plot(
+		torch.cat(torch.linspace(1, #losses, #losses), torch.Tensor(losses)), 
+		loss_graph_config)
 
-	print(('End of epoch %d / %d \t Time Taken: %.3f secs'):format(
-		epoch, opt.epochs, epoch_tm:time().real))
+	print(('End of epoch %d / %d \t Time Taken: %.3f secs, Acc. Time: %.3f'):format(
+		epoch, opt.epochs, epoch_tm:time().real, tm:time().real))
 
-	if epoch % opt.save_epoch_freq == 0 then		
-		torch.save(paths.concat(opt.save_point, opt.save_name, ('net_epoch_%05d.t7'):format(epoch)),
-			autoencoder:clearState())
-	end
+	-- if epoch % opt.save_epoch_freq == 0 then		
+	-- 	torch.save(paths.concat(opt.save_point, opt.save_name, ('%s_epoch_%05d.t7'):format(opt.model, epoch)),
+	-- 		autoencoder:clearState())
+	-- end
 end
 
 -- ()()
