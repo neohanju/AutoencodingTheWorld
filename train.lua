@@ -69,7 +69,7 @@ else
 	cuda = true;	
 end
 if hasCudnn and cuda then 
-	opt.cudnn = 1 
+	opt.cudnn = 1;
 end
 
 if opt.model == 'DenoisingAE' then
@@ -83,7 +83,11 @@ else
 end
 
 if '' == opt.save_name then
-	opt.save_name = opt.model
+	opt.save_name = opt.model;
+end
+
+if string.find(opt.model, 'small') then
+	small_network = true;
 end
 print(opt)
 
@@ -99,10 +103,12 @@ if cuda then
 	cutorch.manualSeed(torch.random());
 end
 
-local tm = torch.Timer()
-local epoch_tm = torch.Timer()
-local data_tm = torch.Timer()
-local file_tm = torch.Timer()
+local tm = torch.Timer();
+local epoch_tm = torch.Timer();
+local data_tm = torch.Timer();
+local file_tm = torch.Timer();
+local data_total_tm = torch.Timer();
+local learning_tm = torch.Timer();
 
 --=============================================================================
 -- Load data
@@ -117,13 +123,18 @@ end
 assert(nil ~= next(inputFileList), "There is no proper input file at " .. opt.datasetPath)
 print_debug(inputFileList);
 
+-- read data dimensions
 local XTrainFile = hdf5.open(paths.concat(opt.datasetPath, inputFileList[1]), 'r');
 local dataDim = XTrainFile:read('/data'):dataspaceSize()
 XTrainFile:close();
-
 local sampleLength, sampleWidth, sampleHeight = dataDim[2], dataDim[3], dataDim[4]
-local XTrain = torch.Tensor(opt.batchSize, sampleLength, sampleWidth, sampleHeight)
 
+-- for small network (113 x 113)
+if small_network then
+	sampleWidth, sampleHeight = 113, 113;
+end
+
+-- loading function
 local function load_data_from_file(inputFileName)
 	local readFile = hdf5.open(paths.concat(opt.datasetPath, inputFileName), 'r');
 	local dim = readFile:read('data'):dataspaceSize();
@@ -145,6 +156,16 @@ local function load_data_from_file(inputFileName)
 		data = readFile:read('/data'):partial({start_pos, end_pos}, {1, dim[2]}, {1, dim[3]}, {1, dim[4]});
 	end	
 	readFile:close();
+
+	-- data postprocessing (resizing for the small network)
+	if small_network then
+		print_debug('rescale the data')
+		data_rs = torch.Tensor(numSamples, sampleLength, sampleHeight_rs, sampleWidth_rs);
+		for i = 1, numSamples do
+			data_rs[i] = image.resize(data[i], sampleWidth, sampleHeight);
+		end
+		return data_rs;
+	end
 
 	return data
 end
@@ -191,6 +212,9 @@ if opt.continue_train then
 
 	Model = util.load_model(paths.concat(opt.save_point, opt.save_name, netFileList[1]), opt)
 else
+	-- generate dummy tensor for network construction
+	local XTrain = torch.Tensor(opt.batchSize, sampleLength, sampleHeight, sampleWidth)
+
 	Model = require ('models/' .. opt.model);
 	Model:createAutoencoder(XTrain);
 	iter_start = 1;
@@ -344,6 +368,8 @@ end
 --=============================================================================
 print('Training...')
 autoencoder:training()
+data_total_tm:reset(); data_total_tm:stop();
+learning_tm:reset(); learning_tm:stop();
 
 -- for network saving
 paths.mkdir(opt.save_point)
@@ -360,7 +386,6 @@ optimState = {
 		beta1 = opt.beta1,
 	},
 }
-
 
 -- display setting
 local loss_graph_config = {
@@ -385,9 +410,10 @@ for epoch = 1, opt.epochs do
 		local fIdx = fileIndices[k];
 
 		file_tm:reset()
-		data_tm:reset()
+		data_tm:reset(); data_total_tm:resume();
 		local data = load_data_from_file(inputFileList[fIdx]);
 		print_debug(('Done: %3f secs'):format(data_tm:time().real))
+		data_total_tm:stop();
 
 		-- shufffle the data
 		data = data:index(1, torch.randperm(data:size(1)):long())
@@ -433,9 +459,9 @@ for epoch = 1, opt.epochs do
 				leftDataLength = 0;
 				
 				-- Optimize -----------------------------------------------------
-				print_debug('optimize start')
+				print_debug('optimize start'); learning_tm:resume();
 				optim[opt.optimiser](feval, params, optimState[opt.optimiser])
-				print_debug(('optimize end, current loss: %.7f'):format(total_loss))
+				print_debug(('optimize end, current loss: %.7f'):format(total_loss)); learning_tm:stop();
 				iter_count = iter_count + 1;
 				-----------------------------------------------------------------	
 
@@ -481,9 +507,11 @@ for epoch = 1, opt.epochs do
 		end
 
 		-- print log to console
+		local data_acc_ratio = data_acc_tm:time().real / tm:time().real;
+		local learning_acc_ratio = learning_tm:time().real / tm:time().real;
 		if nil ~= loss then
-			print(('Epoch: [%d][%3d/%3d] Iteration: %5d (%2d), Total time: %5.2f, Loss: %.5f'):format(
-				epoch, k, #inputFileList, iter_count, iter_count - prev_iter, tm:time().real, total_loss))
+			print(('Epoch: [%d][%3d/%3d] Iter.: %5d (%2d), Time(data/lr.): %5.2f(%.2f/%.2f), Loss: %.5f'):format(
+				epoch, k, #inputFileList, iter_count, iter_count - prev_iter, tm:time().real, data_acc_ratio, learning_acc_ratio, total_loss))
 		else
 			print(('Epoch: [%d][%3d/%3d] too small data for batch'):format(
 				epoch, k, #inputFileList, file_count))
