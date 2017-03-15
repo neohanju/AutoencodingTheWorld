@@ -2,7 +2,7 @@ local nn = require 'nn'
 require '../modules/Gaussian'
 
 local Model = {
-  zSize = 500
+  zSize = 200
 }
 
 function Model:createAutoencoder(X)
@@ -15,31 +15,31 @@ function Model:createAutoencoder(X)
   -- self.encoder:add(nn.LeakyReLU(0.2, true));
   self.encoder:add(nn.Tanh());
   -- out: 64 x 113 x 113
-  self.encoder:add(nn.SpatialConvolution(64, 64, 5, 5, 2, 2, 1, 1));
-  self.encoder:add(nn.SpatialBatchNormalization(64));
-  -- self.encoder:add(nn.LeakyReLU(0.2, true));
-  self.encoder:add(nn.Tanh());
-  -- out: 64 x 56 x 56
   self.encoder:add(nn.SpatialConvolution(64, 128, 5, 5, 2, 2, 1, 1));
   self.encoder:add(nn.SpatialBatchNormalization(128));
   -- self.encoder:add(nn.LeakyReLU(0.2, true));
   self.encoder:add(nn.Tanh());
-  -- out: 128 x 27 x 27
+  -- out: 128 x 56 x 56
   self.encoder:add(nn.SpatialConvolution(128, 256, 5, 5, 2, 2, 1, 1));
   self.encoder:add(nn.SpatialBatchNormalization(256));
   -- self.encoder:add(nn.LeakyReLU(0.2, true));
   self.encoder:add(nn.Tanh());
-  -- out: 256 x 13 x 13
-  self.encoder:add(nn.SpatialConvolution(256, 512, 5, 5, 2, 2, 1, 1));
-  self.encoder:add(nn.SpatialBatchNormalization(512));
+  -- out: 128 x 27 x 27
+  self.encoder:add(nn.SpatialConvolution(256, 128, 5, 5, 2, 2, 1, 1));
+  self.encoder:add(nn.SpatialBatchNormalization(128));
   -- self.encoder:add(nn.LeakyReLU(0.2, true));
   self.encoder:add(nn.Tanh());
-  -- out: 512 x 6 x 6
+  -- out: 128 x 13 x 13
+  self.encoder:add(nn.SpatialConvolution(128, 64, 5, 5, 2, 2, 1, 1));
+  self.encoder:add(nn.SpatialBatchNormalization(64));
+  -- self.encoder:add(nn.LeakyReLU(0.2, true));
+  self.encoder:add(nn.Tanh());
+  -- out: 64 x 6 x 6
 
   -- Create latent Z parameter layer
   local zLayer = nn.ConcatTable();
-  zLayer:add(nn.SpatialConvolution(512, self.zSize, 6, 6)); -- Mean μ of Z
-  zLayer:add(nn.SpatialConvolution(512, self.zSize, 6, 6)); -- Log variance σ^2 of Z (diagonal covariance)
+  zLayer:add(nn.SpatialConvolution(64, self.zSize, 6, 6)); -- Mean μ of Z
+  zLayer:add(nn.SpatialConvolution(64, self.zSize, 6, 6)); -- Log variance σ^2 of Z (diagonal covariance)
   self.encoder:add(zLayer); -- Add Z parameter layer
 
   -- Create σε module
@@ -63,30 +63,30 @@ function Model:createAutoencoder(X)
 
   -- Create decoder
   self.decoder = nn.Sequential();
-  self.decoder:add(nn.SpatialFullConvolution(self.zSize, 512, 7, 7, 1, 1));
-  self.decoder:add(nn.SpatialBatchNormalization(512));  
+  self.decoder:add(nn.SpatialFullConvolution(self.zSize, 64, 7, 7, 1, 1));
+  self.decoder:add(nn.SpatialBatchNormalization(64));  
   -- self.decoder:add(nn.ReLU(true));
   self.decoder:add(nn.Tanh());
   self.decoder:add(nn.Dropout(0.5));
   -- out: 512 x 7 x 7
-  self.decoder:add(nn.SpatialFullConvolution(512, 256, 5, 5, 2, 2, 2, 2));
-  self.decoder:add(nn.SpatialBatchNormalization(256));  
-  -- self.decoder:add(nn.ReLU(true));
-  self.decoder:add(nn.Tanh());
-  self.decoder:add(nn.Dropout(0.5));
-  -- out: 256 x 13 x 13
-  self.decoder:add(nn.SpatialFullConvolution(256, 128, 5, 5, 2, 2, 1, 1));
+  self.decoder:add(nn.SpatialFullConvolution(64, 128, 5, 5, 2, 2, 2, 2));
   self.decoder:add(nn.SpatialBatchNormalization(128));  
   -- self.decoder:add(nn.ReLU(true));
   self.decoder:add(nn.Tanh());
   self.decoder:add(nn.Dropout(0.5));
+  -- out: 256 x 13 x 13
+  self.decoder:add(nn.SpatialFullConvolution(128, 256, 5, 5, 2, 2, 1, 1));
+  self.decoder:add(nn.SpatialBatchNormalization(256));  
+  -- self.decoder:add(nn.ReLU(true));
+  self.decoder:add(nn.Tanh());
+  self.decoder:add(nn.Dropout(0.5));
   -- out: 128 x 27 x 27
-  self.decoder:add(nn.SpatialFullConvolution(128, 64, 4, 4, 2, 2, 0, 0));
-  self.decoder:add(nn.SpatialBatchNormalization(64));  
+  self.decoder:add(nn.SpatialFullConvolution(256, 128, 4, 4, 2, 2, 0, 0));
+  self.decoder:add(nn.SpatialBatchNormalization(128));  
   -- self.decoder:add(nn.ReLU(true));
   self.decoder:add(nn.Tanh());
   -- out: 64 x 56 x 56
-  self.decoder:add(nn.SpatialFullConvolution(64, 64, 5, 5, 2, 2, 1, 1));
+  self.decoder:add(nn.SpatialFullConvolution(128, 64, 5, 5, 2, 2, 1, 1));
   self.decoder:add(nn.SpatialBatchNormalization(64));  
   -- self.decoder:add(nn.ReLU(true));
   self.decoder:add(nn.Tanh());
