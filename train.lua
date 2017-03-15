@@ -160,9 +160,9 @@ local function load_data_from_file(inputFileName)
 	-- data postprocessing (resizing for the small network)
 	if small_network then
 		print_debug('rescale the data')
-		data_rs = torch.Tensor(numSamples, sampleLength, sampleHeight_rs, sampleWidth_rs);
+		data_rs = torch.Tensor(numSamples, sampleLength, sampleHeight, sampleWidth);
 		for i = 1, numSamples do
-			data_rs[i] = image.resize(data[i], sampleWidth, sampleHeight);
+			data_rs[i] = image.scale(data[i], sampleWidth, sampleHeight);
 		end
 		return data_rs;
 	end
@@ -507,9 +507,9 @@ for epoch = 1, opt.epochs do
 		end
 
 		-- print log to console
-		local data_acc_ratio = data_acc_tm:time().real / tm:time().real;
+		local data_acc_ratio = data_total_tm:time().real / tm:time().real;
 		local learning_acc_ratio = learning_tm:time().real / tm:time().real;
-		if nil ~= loss then
+		if nil ~= total_loss then
 			print(('Epoch: [%d][%3d/%3d] Iter.: %5d (%2d), Time(data/lr.): %5.2f(%.2f/%.2f), Loss: %.5f'):format(
 				epoch, k, #inputFileList, iter_count, iter_count - prev_iter, tm:time().real, data_acc_ratio, learning_acc_ratio, total_loss))
 		else
