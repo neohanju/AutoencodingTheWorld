@@ -262,6 +262,7 @@ local params, gradParams = autoencoder:getParameters();
 --=============================================================================
 -- Create optimiser function evaluation
 --=============================================================================
+local total_loss
 local feval = function(x)
 
 	-- just in case:
@@ -279,6 +280,11 @@ local feval = function(x)
 	outputs = autoencoder:forward(inputs); -- Reconstruction
 	local loss = criterion:forward(outputs, inputs); -- target = inputs
 
+	-- check for NaN
+	if loss ~= loss then
+		print('MSE loss is Nan')
+	end
+
 	-- estimate df/dW
 	local gradLoss = criterion:backward(outputs, inputs);
 	autoencoder:backward(inputs, gradLoss);
@@ -286,10 +292,22 @@ local feval = function(x)
 	if string.match(opt.model, 'VAE') then
 	    -- Optimise Gaussian KL divergence between inference model and prior: DKL[q(z|x)||N(0, σI)] = log(σ2/σ1) + ((σ1^2 - σ2^2) + (μ1 - μ2)^2) / 2σ2^2
 	    local nElements = outputs:nElement()
+
+	    -- check for NaN
+		if 0 == nElements then
+			print('zero output element')
+		end
+
 	    local mean, logVar = table.unpack(Model.encoder.output)
 	    local var = torch.exp(logVar)
 	    local KLLoss = 0.5 * torch.sum(torch.pow(mean, 2) + var - logVar - 1)
 	    KLLoss = KLLoss / nElements -- Normalise loss (same normalisation as BCECriterion)
+
+	    -- check for NaN
+		if KLLoss ~= KLLoss then
+			print('KLLoss loss is Nan')
+		end
+
 	    loss = loss + KLLoss
 	    local gradKLLoss = {mean / nElements, 0.5*(var - 1) / nElements}  -- Normalise gradient of loss (same normalisation as BCECriterion)
 	    Model.encoder:backward(inputs, gradKLLoss)
@@ -314,6 +332,8 @@ local feval = function(x)
 		gradParams:add(params:clone():mul(opt.coefL2))
 
 	end
+
+	total_loss = loss;  -- for logging
 
 	return loss, gradParams
 end
@@ -349,7 +369,6 @@ local loss_graph_config = {
 	ylabel = "loss"
 }
 
-local __, loss
 local losses = {}
 -- to make a consistant data size
 local leftDataLength = 0;
@@ -415,8 +434,8 @@ for epoch = 1, opt.epochs do
 				
 				-- Optimize -----------------------------------------------------
 				print_debug('optimize start')
-				__, loss = optim[opt.optimiser](feval, params, optimState[opt.optimiser])
-				print_debug(('optimize end, current loss: %.7f'):format(loss[1]))
+				optim[opt.optimiser](feval, params, optimState[opt.optimiser])
+				print_debug(('optimize end, current loss: %.7f'):format(total_loss))
 				iter_count = iter_count + 1;
 				-----------------------------------------------------------------	
 
@@ -448,7 +467,7 @@ for epoch = 1, opt.epochs do
 					print(('End of training with the maximum iteration number: %d'):format(iter_count));
 				end
 
-				table.insert(losses, loss[1]);
+				table.insert(losses, total_loss:clone());
 			end
 
 			start = start + loadSize;
@@ -464,7 +483,7 @@ for epoch = 1, opt.epochs do
 		-- print log to console
 		if nil ~= loss then
 			print(('Epoch: [%d][%3d/%3d] Iteration: %5d (%2d), Total time: %5.2f, Loss: %.5f'):format(
-				epoch, k, #inputFileList, iter_count, iter_count - prev_iter, tm:time().real, loss[1]))
+				epoch, k, #inputFileList, iter_count, iter_count - prev_iter, tm:time().real, total_loss))
 		else
 			print(('Epoch: [%d][%3d/%3d] too small data for batch'):format(
 				epoch, k, #inputFileList, file_count))
