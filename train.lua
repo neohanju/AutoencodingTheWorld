@@ -30,7 +30,7 @@ cmd:option('-coefL2', 0, 'Param for L1 regularization on the weights')
 -- training
 cmd:option('-batchSize', 64, 'Batch size');
 cmd:option('-epochs', 1000, 'Training epochs');
-cmd:option('-max_iter', 200000, 'Maximum iteration number')
+cmd:option('-max_iter', 200000, 'Maximum iteration number');
 cmd:option('-partial_learning', 1, "Learing with partial data, but at least one sample from the file")
 -- network loading
 cmd:option('-continue_train', 0, "if continue training, load the latest model: true, false")
@@ -38,9 +38,10 @@ cmd:option('-continue_train', 0, "if continue training, load the latest model: t
 cmd:option('-datasetPath', '', 'Path for dataset folder')
 cmd:option('-sequence', 'all', 'Target sequence to train')
 -- optimizer
-cmd:option('-optimiser', 'adagrad | adam', 'Optimiser');
+cmd:option('-optimiser', 'adam', 'Optimiser: adagrad | adam');
 cmd:option('-learningRate', 0.01, 'Learning rate');
 cmd:option('-weightDecay', 0.0005, 'Weight decay coefficient for regularization');
+cmd:option('-beta1', 0.5, 'for Adam optimizer')
 -- others
 cmd:option('-denoising', 0, 'Use denoising criterion');
 cmd:option('-mcmc', 0, 'MCMC samples');
@@ -330,9 +331,16 @@ paths.mkdir(paths.concat(opt.save_point, opt.save_name))
 
 -- optimizer parameters
 optimState = {
-	learningRate = opt.learningRate,
-	weightDecay  = opt.weightDecay,
+	adagrad = {
+		learningRate = opt.learningRate,
+		weightDecay  = opt.weightDecay,
+	},
+	adam = {
+		learningRate = opt.learningRate,
+		beta1 = opt.beta1,
+	},
 }
+
 
 -- display setting
 local loss_graph_config = {
@@ -407,7 +415,7 @@ for epoch = 1, opt.epochs do
 				
 				-- Optimize -----------------------------------------------------
 				print_debug('optimize start')
-				__, loss = optim.adagrad(feval, params, optimState)
+				__, loss = optim[opt.optimiser](feval, params, optimState[opt.optimiser])
 				print_debug(('optimize end, current loss: %.7f'):format(loss[1]))
 				iter_count = iter_count + 1;
 				-----------------------------------------------------------------	
