@@ -467,7 +467,7 @@ for epoch = 1, opt.epochs do
 					print(('End of training with the maximum iteration number: %d'):format(iter_count));
 				end
 
-				table.insert(losses, total_loss:clone());
+				table.insert(losses, total_loss);
 			end
 
 			start = start + loadSize;
