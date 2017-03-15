@@ -262,7 +262,7 @@ local params, gradParams = autoencoder:getParameters();
 --=============================================================================
 -- Create optimiser function evaluation
 --=============================================================================
-local total_loss
+local total_loss = nil
 local feval = function(x)
 
 	-- just in case:
@@ -481,7 +481,7 @@ for epoch = 1, opt.epochs do
 		end
 
 		-- print log to console
-		if nil ~= loss then
+		if nil ~= total_loss then
 			print(('Epoch: [%d][%3d/%3d] Iteration: %5d (%2d), Total time: %5.2f, Loss: %.5f'):format(
 				epoch, k, #inputFileList, iter_count, iter_count - prev_iter, tm:time().real, total_loss))
 		else
