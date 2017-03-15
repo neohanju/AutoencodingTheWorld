@@ -283,7 +283,7 @@ local feval = function(x)
 	local gradLoss = criterion:backward(outputs, inputs);
 	autoencoder:backward(inputs, gradLoss);
 
-	if opt.model == 'ConvVAE' or opt.model == 'VAE' then
+	if string.match(opt.model, 'VAE') then
 	    -- Optimise Gaussian KL divergence between inference model and prior: DKL[q(z|x)||N(0, σI)] = log(σ2/σ1) + ((σ1^2 - σ2^2) + (μ1 - μ2)^2) / 2σ2^2
 	    local nElements = outputs:nElement()
 	    local mean, logVar = table.unpack(Model.encoder.output)
