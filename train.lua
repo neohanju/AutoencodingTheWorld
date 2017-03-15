@@ -39,7 +39,7 @@ cmd:option('-datasetPath', '', 'Path for dataset folder')
 cmd:option('-sequence', 'all', 'Target sequence to train')
 -- optimizer
 cmd:option('-optimiser', 'adam', 'Optimiser: adagrad | adam');
-cmd:option('-learningRate', 0.01, 'Learning rate');
+cmd:option('-learningRate', 0.0002, 'Learning rate');
 cmd:option('-weightDecay', 0.0005, 'Weight decay coefficient for regularization');
 cmd:option('-beta1', 0.5, 'for Adam optimizer')
 -- others
@@ -286,7 +286,7 @@ local params, gradParams = autoencoder:getParameters();
 --=============================================================================
 -- Create optimiser function evaluation
 --=============================================================================
-local total_loss
+local total_loss = nil
 local feval = function(x)
 
 	-- just in case:
