@@ -38,3 +38,7 @@ dataset/
 ######################
 *.png
 Training.png
+
+
+# pycharm
+.idea/
