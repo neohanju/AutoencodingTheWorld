@@ -31,7 +31,7 @@ parser.add_argument('--sparse', action='store_ture', default=False,
                     help='assign sparsity constraint on the latent variable')
 
 # training related
-parser.add_argument('--batchSize', type=int, default=64, help='input batch size. default=64')
+parser.add_argument('--batch_size', type=int, default=64, help='input batch size. default=64')
 parser.add_argument('--epochs', type=int, default=25, help='number of epochs to train for. default=25')
 parser.add_argument('--max_iter', type=int, default=150000, help='number of iterations to train for. default=150,000')
 parser.add_argument('--partial_learning', type=float, default=1,
@@ -39,10 +39,11 @@ parser.add_argument('--partial_learning', type=float, default=1,
 parser.add_argument('--continue_train', action='store_true', default=False,
                     help='load the latest model to continue the training, default=False')
 
-# data loading related
+# data related
 parser.add_argument('--dataset', type=str, required=True,
                     help='all | CUHK | UCSD_PED1 | UCSD_PED2 | Subway_enter | Subway_exit. all means using entire data')
 parser.add_argument('--data_root', type=str, required=True, help='path to base folder of entire datasets')
+parser.add_argument('--image_size', type=int, default=227, help='input image size (width=height). default=227')
 parser.add_argument('--workers', type=int, default=2, help='number of data loading workers')
 
 # optimization related
@@ -110,33 +111,61 @@ tm_forward = time.time()
 # =============================================================================
 # DATA PREPARATION
 # =============================================================================
-num_frames_per_sample = 10
+frames_per_sample = 10
 
+input = torch.FloatTensor(options.batch_size, frames_per_sample, options.image_size, options.image_size)
+recon = torch.FloatTensor(options.batch_size, frames_per_sample, options.image_size, options.image_size)
 
+if options.cuda:
+    input = input.cuda()
+    recon = recon.cuda()
+
+input = Variable(input)
+recon = Variable(recon)
 
 # =============================================================================
 # MODEL & LOSS FUNCTION
 # =============================================================================
 if options.model == 'AE':
-    model = AE(num_frames_per_sample, options.nz, options.nf)
+    model = AE(frames_per_sample, options.nz, options.nf)
 elif options.model == 'VAE':
-    model = VAE(num_frames_per_sample, options.nz, options.nf)
+    model = VAE(frames_per_sample, options.nz, options.nf)
+assert model
 
 # criterions
 reconstruction_loss = nn.MSELoss()
 variational_loss = nn.KLDivLoss()
 regularization_loss = nn.L1Loss()
 
+if options.cuda:
+    model.cuda()
+    reconstruction_loss.cuda()
+    variational_loss.cuda()
+    regularization_loss.cuda()
+
+
+# for display
+mse_loss, kld_loss, sparse_loss = 0, 0
+
 def loss_function(recon_x, x, mu, logvar):
-    loss = reconstruction_loss(recon_x, x)
+    mse_loss = reconstruction_loss(recon_x, x)
+    loss = mse_loss
     if options.variational:
         # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
-        KLD_element = mu.pow(2).add_(logvar.exp()).mul_(-1).add_(1).add_(logvar)
-        KLD = torch.sum(KLD_element).mul_(-0.5)
-        loss += KLD
+        kld_element = mu.pow(2).add_(logvar.exp()).mul_(-1).add_(1).add_(logvar)
+        kld_loss = torch.sum(kld_element).mul_(-0.5)
+        loss += kld_loss
     if options.sparse:
+        sparse_loss = regularization_loss(mu, 0)
+        loss += sparse_loss
 
     return loss
+
+
+# =============================================================================
+# OPTIMIZATION
+# =============================================================================
+optimizer = optim.adam(model.parameters(), lr=options.learning_rate, betas=(options.beta1, 0.999))
 
 #()()
 #('')HAANJU.YOO
