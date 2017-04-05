@@ -4,6 +4,7 @@ from torch.autograd import Variable
 
 # weight initialization function from DCGAN example. (resemble with Xavier's)
 def weight_init(module):
+    # TODO: change to Xavier init : http://wiseodd.github.io/techblog/2017/01/24/vae-pytorch/
     classname = module.__class__.__name__
     if classname.find('Conv') != -1:
         module.weight.data.normal_(0.0, 0.02)
@@ -86,6 +87,7 @@ class AE(nn.Module):
     def forward(self, x):
         z = self.encode(x)
         return self.decode(z), z
+
 
 # =============================================================================
 # Variational Autoencoder [default]

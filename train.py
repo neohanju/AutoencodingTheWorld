@@ -9,13 +9,12 @@ import torch.nn.parallel
 import torch.nn.init
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
-import torch.utils.data
-import torchvision.datasets as dset
 import torchvision.transforms as transforms
 import torchvision.utils as vutils
 from torch.autograd import Variable
 
 from models import AE, VAE
+from data import VideoClipSets
 
 
 # =============================================================================
@@ -41,7 +40,7 @@ parser.add_argument('--continue_train', action='store_true', default=False,
                     help='load the latest model to continue the training, default=False')
 # data related ----------------------------------------------------------------
 parser.add_argument('--dataset', type=str, required=True,
-                    help='all | CUHK | UCSD_PED1 | UCSD_PED2 | Subway_enter | Subway_exit. all means using entire data')
+                    help="all | avenue | ped1 | ped2 | enter | exit. 'all' means using entire data")
 parser.add_argument('--data_root', type=str, required=True, help='path to base folder of entire datasets')
 parser.add_argument('--image_size', type=int, default=227, help='input image size (width=height). default=227')
 parser.add_argument('--workers', type=int, default=2, help='number of data loading workers')
@@ -116,10 +115,22 @@ tm_forward = time.time()
 # =============================================================================
 # DATA PREPARATION
 # =============================================================================
+
 frames_per_sample = 10
 
+# set data loader
+options.dataset.replace(' ', '')  # remove white space
+dataset_paths = []
+if options.dataset is 'all':
+    options.dataset = 'avenue|ped1|ped2|enter|exit'
+if 'avenue' in options.dataset:
+    dataset_paths.append(options.data_root + '/avenue/train')
+# TODO: tokenize dataset string with '|'
 
-
+dataloader = VideoClipSets(paths=dataset_paths,
+                           batch_size=options.batch_size,
+                           shuffle=True,
+                           num_workers=options.workers)
 
 # streaming buffer
 input = torch.FloatTensor(options.batch_size, frames_per_sample, options.image_size, options.image_size)
@@ -182,7 +193,15 @@ optimizer = optim.adam(model.parameters(), lr=options.learning_rate, betas=(opti
 
 iter_count = 0
 for epoch in range(options.epochs):
-    for i, data in enumerate(dataloader, 0):
+    for iter, data in enumerate(dataloader, 0):
+
+        batch_size = data.size(0)
+        input.data.resize_(data.size()).copy_(data)
+        recon.data.resize_(data.size())
+
+        model.zero_grad()
+        recon = model(input)
+
 
 
 #()()
