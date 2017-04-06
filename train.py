@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.parallel
 import torch.nn.init
+import torch.utils.data
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
 import torchvision.transforms as transforms
@@ -28,8 +29,6 @@ parser.add_argument('--nz', type=int, default=200, help='size of the latent z ve
 parser.add_argument('--nf', type=int, default=64, help='size of lowest image filters. default=64')
 parser.add_argument('--l1_coef', type=float, default=0, help='coef of L1 regularization on the weights. default=0')
 parser.add_argument('--l2_coef', type=float, default=0, help='coef of L2 regularization on the weights. default=0')
-parser.add_argument('--sparse', action='store_ture', default=False,
-                    help='assign sparsity constraint on the latent variable')
 # training related ------------------------------------------------------------
 parser.add_argument('--batch_size', type=int, default=64, help='input batch size. default=64')
 parser.add_argument('--epochs', type=int, default=25, help='number of epochs to train for. default=25')
@@ -65,14 +64,21 @@ parser.add_argument('--save_path', type=str, default='./training_result',
 parser.add_argument('--save_name', type=str, default='', help='name for network saving')
 # ETC -------------------------------------------------------------------------
 parser.add_argument('--random_seed', type=int, help='manual seed')
+parser.add_argument('--debug_print', action='store_true', default=False, help='print debug information')
 # -----------------------------------------------------------------------------
 
 options = parser.parse_args()
 
+
+def debug_print(arg):
+    if not options.debug_print:
+        return
+    print(arg)
+
 # cuda
 options.cuda = not options.cpu_only and torch.cuda.is_available()
 if torch.cuda.is_available() and not options.cuda:
-    print('WARNING: You have a CUDA device, so you should probably run without --cpu_only')
+    debug_print('WARNING: You have a CUDA device, so you should probably run without --cpu_only')
 
 # TODO: visdom package handling
 
@@ -101,13 +107,12 @@ save_path = options.save_path + '/' + options.model
 try:
     os.makedirs(save_path)
 except OSError:
-    print('WARNING: Cannot make network saving folder. Training result will be discarded.')
+    debug_print('WARNING: Cannot make network saving folder')
     pass
 
 tm_start = time.time()
 tm_epoch = time.time()
 tm_iter = time.time()
-tm_data = time.time()
 tm_optimize = time.time()
 tm_forward = time.time()
 
@@ -127,21 +132,30 @@ if 'avenue' in options.dataset:
     dataset_paths.append(options.data_root + '/avenue/train')
 # TODO: tokenize dataset string with '|'
 
-dataloader = VideoClipSets(paths=dataset_paths,
-                           batch_size=options.batch_size,
-                           shuffle=True,
-                           num_workers=options.workers)
+dataset = VideoClipSets(dataset_paths)
+dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=True,
+                                         num_workers=options.workers)
+print('Data loader is ready')
+
 
 # streaming buffer
-input = torch.FloatTensor(options.batch_size, frames_per_sample, options.image_size, options.image_size)
-recon = torch.FloatTensor(options.batch_size, frames_per_sample, options.image_size, options.image_size)
+tm_buffer_set = time.time()
+input_batch = torch.FloatTensor(options.batch_size, frames_per_sample, options.image_size, options.image_size)
+recon_batch = torch.FloatTensor(options.batch_size, frames_per_sample, options.image_size, options.image_size)
+debug_print('Stream buffers are set: {} sec elapsed'.format(time.time() - tm_buffer_set))
 
 if options.cuda:
-    input = input.cuda()
-    recon = recon.cuda()
+    debug_print('Start transferring to CUDA')
+    tm_gpu_start = time.time()
+    input_batch = input_batch.cuda()
+    recon_batch = recon_batch.cuda()
+    debug_print('Transfer to GPU: {} sec elapsed'.format(time.time() - tm_gpu_start))
 
-input = Variable(input)
-recon = Variable(recon)
+tm_to_variable = time.time()
+input_batch = Variable(input_batch)
+recon_batch = Variable(recon_batch)
+debug_print('To Variable for Autograd: {} sec elapsed'.format(time.time() - tm_to_variable))
+
 print('Data streaming is ready')
 
 # =============================================================================
@@ -159,29 +173,38 @@ print('{} is generated'.format(options.model))
 # criterions
 reconstruction_loss = nn.MSELoss()
 variational_loss = nn.KLDivLoss()
-regularization_loss = nn.L1Loss()
 
 # to gpu
 if options.cuda:
+    debug_print('Start transferring to CUDA')
+    tm_gpu_start = time.time()
     model.cuda()
     reconstruction_loss.cuda()
     variational_loss.cuda()
-    regularization_loss.cuda()
+    debug_print('Transfer to GPU: {} sec elapsed'.format(time.time() - tm_gpu_start))
 
 # for display
-mse_loss, kld_loss, sparse_loss = 0, 0
+mse_loss, kld_loss, reg_l1_loss, reg_l2_loss = 0, 0, 0, 0
+params = model.parameters()
 
-def loss_function(recon_x, x, mu, logvar):
+
+def loss_function(recon_x, x, mu=None, logvar=None):
+    # thanks to Autograd, you can train the net by just summing-up all losses and propagating them
     mse_loss = reconstruction_loss(recon_x, x)
     loss = mse_loss
     if options.variational:
+        assert mu is not None and logvar is not None
         # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
         kld_element = mu.pow(2).add_(logvar.exp()).mul_(-1).add_(1).add_(logvar)
         kld_loss = torch.sum(kld_element).mul_(-0.5)
         loss += kld_loss
-    if options.sparse:
-        sparse_loss = regularization_loss(mu, 0)
-        loss += sparse_loss
+    if options.coefL1 != 0.0:
+        reg_l1_loss = options.l1_coef * torch.norm(params, 1)
+        # params.data -= options.learning_rate * params.grad.data
+        loss += reg_l1_loss
+    if options.coefL2 != 0.0:
+        reg_l2_loss = options.l2_coef * torch.norm(params, 2) ^ 2 / 2
+        loss += reg_l2_loss
 
     return loss
 
@@ -189,19 +212,34 @@ def loss_function(recon_x, x, mu, logvar):
 # =============================================================================
 # OPTIMIZATION
 # =============================================================================
-optimizer = optim.adam(model.parameters(), lr=options.learning_rate, betas=(options.beta1, 0.999))
+print('Start training...')
+model.train()
 
+optimizer = optim.Adam(model.parameters(), lr=options.learning_rate, betas=(options.beta1, 0.999))
+#
 iter_count = 0
 for epoch in range(options.epochs):
+    train_loss = 0;
     for iter, data in enumerate(dataloader, 0):
 
+        # data feed
         batch_size = data.size(0)
-        input.data.resize_(data.size()).copy_(data)
-        recon.data.resize_(data.size())
+        input_batch.data.resize_(data.size()).copy_(data)
+        recon_batch.data.resize_(data.size())
 
+        # forward
         model.zero_grad()
-        recon = model(input)
+        recon_batch, mu_batch, logvar_batch = model(input_batch)
 
+        # backward
+        loss = loss_function(recon_batch, input_batch, mu_batch, logvar_batch)
+        loss.backward()
+        train_loss += loss.data[0]
+        optimizer.step()
+
+        # visualize
+        # TODO: visualize input / reconstruction pair
+        # TODO: find input index and set latent vector of that index
 
 
 #()()

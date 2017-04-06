@@ -17,8 +17,9 @@ def weight_init(module):
 # Autoencoder [default]
 # =============================================================================
 class AE(nn.Module):
-    def __init__(self, num_in_channels, z_size, num_filters):
+    def __init__(self, num_in_channels, z_size, num_filters, num_gpu=1):
         super().__init__()
+        self.num_gpu = num_gpu
         self.nc = num_in_channels # number of input channel
         self.nz = z_size  # size of latent variable
         self.nf = num_filters     # number of fundamental filters
@@ -86,7 +87,7 @@ class AE(nn.Module):
 
     def forward(self, x):
         z = self.encode(x)
-        return self.decode(z), z
+        return self.decode(z), z, None
 
 
 # =============================================================================
