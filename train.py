@@ -18,6 +18,12 @@ from models import AE, VAE
 from data import VideoClipSets
 
 
+def debug_print(arg):
+    if not options.debug_print:
+        return
+    print(arg)
+
+
 # =============================================================================
 # OPTIONS
 # =============================================================================
@@ -25,13 +31,14 @@ parser = argparse.ArgumentParser(description='Detecting abnormal behavior in vid
 
 # model related ---------------------------------------------------------------
 parser.add_argument('--model', type=str, required=True, help='AE | AE_NEW | VAE | VAE_NEW')
+parser.add_argument('--nc', type=int, default=10, help='number of input channel. default=10')
 parser.add_argument('--nz', type=int, default=200, help='size of the latent z vector. default=100')
 parser.add_argument('--nf', type=int, default=64, help='size of lowest image filters. default=64')
 parser.add_argument('--l1_coef', type=float, default=0, help='coef of L1 regularization on the weights. default=0')
 parser.add_argument('--l2_coef', type=float, default=0, help='coef of L2 regularization on the weights. default=0')
 # training related ------------------------------------------------------------
 parser.add_argument('--batch_size', type=int, default=64, help='input batch size. default=64')
-parser.add_argument('--epochs', type=int, default=25, help='number of epochs to train for. default=25')
+parser.add_argument('--epochs', type=int, default=5000, help='number of epochs to train for. default=25')
 parser.add_argument('--max_iter', type=int, default=150000, help='number of iterations to train for. default=150,000')
 parser.add_argument('--partial_learning', type=float, default=1,
                     help='ratio of partial data for training. At least one sample from each file. default=1')
@@ -56,8 +63,8 @@ parser.add_argument('--display_freq', type=int, default=5, help='display frequen
 # GPU related -----------------------------------------------------------------
 parser.add_argument('--num_gpu', type=int, default=1, help='number of GPUs to use. default=1')
 # network saving related ------------------------------------------------------
-parser.add_argument('--save_freq', type=int, default=500,
-                    help='network saving frequency w.r.t. iteration number. default=500')
+parser.add_argument('--save_freq', type=int, default=10,
+                    help='network saving frequency w.r.t. epoch number. default=500')
 parser.add_argument('--save_path', type=str, default='./training_result',
                     help='path to trained network. default=./training_result')
 parser.add_argument('--save_name', type=str, default='', help='name for network saving')
@@ -67,15 +74,6 @@ parser.add_argument('--debug_print', action='store_true', default=False, help='p
 # -----------------------------------------------------------------------------
 
 options = parser.parse_args()
-
-
-def debug_print(arg):
-    if not options.debug_print:
-        return
-    print(arg)
-
-# cuda
-cuda_available = torch.cuda.is_available()
 
 # TODO: visdom package handling
 
@@ -92,6 +90,8 @@ print(options)
 # =============================================================================
 # INITIALIZATION PROCESS
 # =============================================================================
+
+cuda_available = torch.cuda.is_available()
 
 torch.manual_seed(options.random_seed)
 if cuda_available:
@@ -110,7 +110,7 @@ except OSError:
 # DATA PREPARATION
 # =============================================================================
 
-frames_per_sample = 10
+frames_per_sample = options.nc
 
 # set data loader
 options.dataset.replace(' ', '')  # remove white space
@@ -147,6 +147,7 @@ debug_print('To Variable for Autograd: %.3f sec elapsed' % (time.time() - tm_to_
 
 print('Data streaming is ready')
 
+
 # =============================================================================
 # MODEL & LOSS FUNCTION
 # =============================================================================
@@ -173,7 +174,6 @@ if cuda_available:
     debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
 
 # for display
-mse_loss, kld_loss, reg_l1_loss, reg_l2_loss = 0, 0, 0, 0
 params = model.parameters()
 
 
@@ -195,16 +195,16 @@ def loss_function(recon_x, x, mu=None, logvar=None):
         reg_l2_loss = options.l2_coef * torch.norm(params, 2) ^ 2 / 2
         loss += reg_l2_loss
 
-    return loss
+    return loss, mse_loss, kld_loss, reg_l1_loss, reg_l2_loss
 
 
 def save_model(filename):
-    torch.save(model.state_dict(), '%s/%s' % (options.save_path, filename))
+    torch.save(model.state_dict(), '%s/%s' % (save_path, filename))
     print('Model is saved at ' + filename)
 
 
 # =============================================================================
-# OPTIMIZATION
+# TRAINING
 # =============================================================================
 
 print('Start training...')
@@ -229,26 +229,28 @@ for epoch in range(options.epochs):
     for i, data in enumerate(dataloader, 0):
 
         # data feed
-        # input_batch = Variable(data)
-        # if cuda_available:
-        #     input_batch = input_batch.cuda()
         batch_size = data.size(0)
         input_batch.data.resize_(data.size()).copy_(data)
         recon_batch.data.resize_(data.size())
 
-        tm_train_start = time.time()
-
         # forward
+        tm_train_start = time.time()
         model.zero_grad()
         recon_batch, mu_batch, logvar_batch = model(input_batch)
-
         # backward
-        loss = loss_function(recon_x=recon_batch, x=input_batch, mu=mu_batch, logvar=logvar_batch)
+        loss, mse_loss, kld_loss, reg_l1_loss, reg_l2_loss = \
+            loss_function(recon_x=recon_batch, x=input_batch, mu=mu_batch, logvar=logvar_batch)
         loss.backward()
-        total_loss_history.append(loss.data[0])
+        # update
         optimizer.step()
-
         tm_train_iter_consume = time.time() - tm_train_start
+
+        # logging losses
+        total_loss_history.append(loss.data[0])
+        recon_loss_history.append(mse_loss.data[0])
+        variational_loss_history.append(kld_loss.data[0])
+        reg_l1_loss_history.append(reg_l1_loss.data[0])
+        reg_l2_loss_history.append(reg_l2_loss.data[0])
 
         # visualize
         tm_visualize_start = time.time()
@@ -256,19 +258,14 @@ for epoch in range(options.epochs):
         # TODO: find input index and set latent vector of that index
         tm_visualize_consume = time.time() - tm_visualize_start
 
-        recon_loss_history.append(mse_loss)
-        variational_loss_history.append(kld_loss)
-        reg_l1_loss_history.append(reg_l1_loss)
-        reg_l2_loss_history.append(reg_l2_loss)
-
         print('[%02d/%02d][%04d/%04d] Iter:%06d Total: %.4f Recon: %.4f Var: %.4f L1: %.4f L2: %.4f'
               % (epoch, options.epochs, i, len(dataloader), iter_count,
                  loss.data[0], mse_loss, kld_loss, reg_l1_loss, reg_l2_loss))
 
-        # checkpoint w.r.t. iteration number
         iter_count += 1
-        if 0 == iter_count % options.save_freq:
-            save_model('%s_%s_iter_%03d.pth' % (options.dataset, options.model, iter_count))
+        # # checkpoint w.r.t. iteration number
+        # if 0 == iter_count % options.save_freq:
+        #     save_model('%s_%s_iter_%03d.pth' % (options.dataset, options.model, iter_count))
 
         tm_iter_consume = time.time() - tm_cur_iter_start
         print('\tTime consume (secs) Total: %.3f CurIter: %.3f, Train: %.3f, Vis.: %.3f ETC: %.3f'
@@ -277,8 +274,10 @@ for epoch in range(options.epochs):
         tm_cur_iter_start = time.time()
 
     print('====> Epoch %d is ternimated: Total loss is %f' % (epoch, total_loss_history[-1]))
+
     # checkpoint w.r.t. epoch
-    save_model('%s_%s_epoch_%03d.pth' % (options.dataset, options.model, epoch))
+    if 0 == epoch % options.save_freq:
+        save_model('%s_%s_epoch_%03d.pth' % (options.dataset, options.model, epoch))
 
 
 #()()
