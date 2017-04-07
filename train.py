@@ -54,7 +54,6 @@ parser.add_argument('--display', action='store_true', default=False,
                     help='visualize things with visdom or not. default=False')
 parser.add_argument('--display_freq', type=int, default=5, help='display frequency w.r.t. iterations. default=5')
 # GPU related -----------------------------------------------------------------
-parser.add_argument('--cpu_only', action='store_true', help='CPU only (useful if GPU memory is too low)')
 parser.add_argument('--num_gpu', type=int, default=1, help='number of GPUs to use. default=1')
 # network saving related ------------------------------------------------------
 parser.add_argument('--save_freq', type=int, default=500,
@@ -76,9 +75,7 @@ def debug_print(arg):
     print(arg)
 
 # cuda
-options.cuda = not options.cpu_only and torch.cuda.is_available()
-if torch.cuda.is_available() and not options.cuda:
-    debug_print('WARNING: You have a CUDA device, so you should probably run without --cpu_only')
+cuda_available = torch.cuda.is_available()
 
 # TODO: visdom package handling
 
@@ -96,10 +93,8 @@ print(options)
 # INITIALIZATION PROCESS
 # =============================================================================
 
-# torch setup
-
 torch.manual_seed(options.random_seed)
-if options.cuda:
+if cuda_available:
     torch.cuda.manual_seed_all(options.random_seed)
 
 # network saving
@@ -132,25 +127,25 @@ dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.bat
 print('Data loader is ready')
 
 
-# # streaming buffer
-# tm_buffer_set = time.time()
-# input_batch = torch.FloatTensor(options.batch_size, frames_per_sample, options.image_size, options.image_size)
-# recon_batch = torch.FloatTensor(options.batch_size, frames_per_sample, options.image_size, options.image_size)
-# debug_print('Stream buffers are set: %.3f sec elapsed' % (time.time() - tm_buffer_set))
-#
-# if options.cuda:
-#     debug_print('Start transferring to CUDA')
-#     tm_gpu_start = time.time()
-#     input_batch = input_batch.cuda()
-#     recon_batch = recon_batch.cuda()
-#     debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
-#
-# tm_to_variable = time.time()
-# input_batch = Variable(input_batch)
-# recon_batch = Variable(recon_batch)
-# debug_print('To Variable for Autograd: %.3f sec elapsed' % (time.time() - tm_to_variable))
-#
-# print('Data streaming is ready')
+# streaming buffer
+tm_buffer_set = time.time()
+input_batch = torch.FloatTensor(options.batch_size, frames_per_sample, options.image_size, options.image_size)
+recon_batch = torch.FloatTensor(options.batch_size, frames_per_sample, options.image_size, options.image_size)
+debug_print('Stream buffers are set: %.3f sec elapsed' % (time.time() - tm_buffer_set))
+
+if cuda_available:
+    debug_print('Start transferring to CUDA')
+    tm_gpu_start = time.time()
+    input_batch = input_batch.cuda()
+    recon_batch = recon_batch.cuda()
+    debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
+
+tm_to_variable = time.time()
+input_batch = Variable(input_batch)
+recon_batch = Variable(recon_batch)
+debug_print('To Variable for Autograd: %.3f sec elapsed' % (time.time() - tm_to_variable))
+
+print('Data streaming is ready')
 
 # =============================================================================
 # MODEL & LOSS FUNCTION
@@ -158,9 +153,9 @@ print('Data loader is ready')
 
 # create model instance
 if 'AE' == options.model:
-    model = AE(frames_per_sample, options.nz, options.nf)
+    model = AE(num_in_channels=frames_per_sample, z_size=options.nz, num_filters=options.nf)
 elif 'VAE' == options.model:
-    model = VAE(frames_per_sample, options.nz, options.nf)
+    model = VAE(num_in_channels=frames_per_sample, z_size=options.nz, num_filters=options.nf)
 assert model
 print(options.model + ' is generated')
 
@@ -169,7 +164,7 @@ reconstruction_loss = nn.MSELoss()
 variational_loss = nn.KLDivLoss()
 
 # to gpu
-if options.cuda:
+if cuda_available:
     debug_print('Start transferring to CUDA')
     tm_gpu_start = time.time()
     model.cuda()
@@ -192,11 +187,11 @@ def loss_function(recon_x, x, mu=None, logvar=None):
         kld_element = mu.pow(2).add_(logvar.exp()).mul_(-1).add_(1).add_(logvar)
         kld_loss = torch.sum(kld_element).mul_(-0.5)
         loss += kld_loss
-    if 0.0 != options.coefL1:
+    if 0.0 != options.l1_coef:
         reg_l1_loss = options.l1_coef * torch.norm(params, 1)
         # params.data -= options.learning_rate * params.grad.data
         loss += reg_l1_loss
-    if 0.0 != options.coefL2:
+    if 0.0 != options.l2_coef:
         reg_l2_loss = options.l2_coef * torch.norm(params, 2) ^ 2 / 2
         loss += reg_l2_loss
 
@@ -225,21 +220,21 @@ reg_l2_loss_history = []
 
 tm_data_load_total = 0
 tm_iter_total = 0
-tm_train_start = time.time()
+tm_loop_start = time.time()
 
 iter_count = 0
 
 for epoch in range(options.epochs):
     tm_cur_iter_start = time.time()
-    for i, input_batch in enumerate(dataloader, 0):
+    for i, data in enumerate(dataloader, 0):
 
         # data feed
-        input_batch = Variable(input_batch)
-        if options.cuda:
-            input_batch = input_batch.cuda()
-        # batch_size = data.size(0)
-        # input_batch.data.resize_(data.size()).copy_(data)
-        # recon_batch.data.resize_(data.size())
+        # input_batch = Variable(data)
+        # if cuda_available:
+        #     input_batch = input_batch.cuda()
+        batch_size = data.size(0)
+        input_batch.data.resize_(data.size()).copy_(data)
+        recon_batch.data.resize_(data.size())
 
         tm_train_start = time.time()
 
@@ -277,7 +272,7 @@ for epoch in range(options.epochs):
 
         tm_iter_consume = time.time() - tm_cur_iter_start
         print('\tTime consume (secs) Total: %.3f CurIter: %.3f, Train: %.3f, Vis.: %.3f ETC: %.3f'
-              % (time.time() - tm_train_start, tm_iter_consume, tm_train_iter_consume, tm_visualize_consume,
+              % (time.time() - tm_loop_start, tm_iter_consume, tm_train_iter_consume, tm_visualize_consume,
                  tm_iter_consume - tm_train_iter_consume - tm_visualize_consume))
         tm_cur_iter_start = time.time()
 

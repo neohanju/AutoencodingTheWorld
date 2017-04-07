@@ -17,67 +17,61 @@ def weight_init(module):
 # Autoencoder [default]
 # =============================================================================
 class AE(nn.Module):
-    def __init__(self, num_in_channels, z_size, num_filters, num_gpu=1):
+    def __init__(self, num_in_channels, z_size=200, num_filters=64, num_gpu=1):
         super().__init__()
         self.num_gpu = num_gpu
-        self.nc = num_in_channels # number of input channel
-        self.nz = z_size  # size of latent variable
-        self.nf = num_filters     # number of fundamental filters
         self.encoder = nn.Sequential(
             # expected input: (L) x 227 x 227
-            nn.Conv2d(self.nc, self.nf, 5, 2, 1),
-            nn.BatchNorm2d(self.nf),
+            nn.Conv2d(num_in_channels, num_filters, 5, 2, 1),
+            nn.BatchNorm2d(num_filters),
             nn.LeakyReLU(0.2, True),
             # state size: (nf) x 113 x 113
-            nn.Conv2d(self.nf, 2 * self.nf, 5, 2, 1),
-            nn.BatchNorm2d(2 * self.nf),
+            nn.Conv2d(num_filters, 2 * num_filters, 5, 2, 1),
+            nn.BatchNorm2d(2 * num_filters),
             nn.LeakyReLU(0.2, True),
             # state size: (2 x nf) x 56 x 56
-            nn.Conv2d(2 * self.nf, 4 * self.nf, 5, 2, 1),
-            nn.BatchNorm2d(4 * self.nf),
+            nn.Conv2d(2 * num_filters, 4 * num_filters, 5, 2, 1),
+            nn.BatchNorm2d(4 * num_filters),
             nn.LeakyReLU(0.2, True),
             # state size: (4 x nf) x 27 x 27
-            nn.Conv2d(4 * self.nf, 8 * self.nf, 5, 2, 1),
-            nn.BatchNorm2d(8 * self.nf),
+            nn.Conv2d(4 * num_filters, 8 * num_filters, 5, 2, 1),
+            nn.BatchNorm2d(8 * num_filters),
             nn.LeakyReLU(0.2, True),
             # state size: (8 x nf) x 13 x 13
-            nn.Conv2d(8 * self.nf, 8 * self.nf, 5, 2, 1),
-            nn.BatchNorm2d(8 * self.nf),
+            nn.Conv2d(8 * num_filters, 8 * num_filters, 5, 2, 1),
+            nn.BatchNorm2d(8 * num_filters),
             nn.LeakyReLU(0.2, True)
             # state size: (8 x nf) x 6 x 6
         )
-        self.z = nn.Conv2d(8 * self.nf, self.nz, 6)
+        self.z = nn.Conv2d(8 * num_filters, z_size, 6)
         self.decoder = nn.Sequential(
             # expected input: (nz) x 1 x 1
-            nn.ConvTranspose2d(self.nz, 8 * self.nf, 6, 2, 0),
-            nn.BatchNorm2d(8 * self.nf),
+            nn.ConvTranspose2d(z_size, 8 * num_filters, 6, 2, 0),
+            nn.BatchNorm2d(8 * num_filters),
             nn.LeakyReLU(0.2, True),
             # state size: (8 x nf) x 6 x 6
-            nn.ConvTranspose2d(8 * self.nf, 8 * self.nf, 5, 2, 1),
-            nn.BatchNorm2d(8 * self.nf),
+            nn.ConvTranspose2d(8 * num_filters, 8 * num_filters, 5, 2, 1),
+            nn.BatchNorm2d(8 * num_filters),
             nn.LeakyReLU(0.2, True),
             # state size: (8 x nf) x 13 x 13
-            nn.ConvTranspose2d(8 * self.nf, 4 * self.nf, 5, 2, 1),
-            nn.BatchNorm2d(4 * self.nf),
+            nn.ConvTranspose2d(8 * num_filters, 4 * num_filters, 5, 2, 1),
+            nn.BatchNorm2d(4 * num_filters),
             nn.LeakyReLU(0.2, True),
             # state size: (4 x nf) x 27 x 27
-            nn.ConvTranspose2d(4 * self.nf, 2 * self.nf, 5, 2, 1),
-            nn.BatchNorm2d(2 * self.nf),
+            nn.ConvTranspose2d(4 * num_filters, 2 * num_filters, 5, 2, 1),
+            nn.BatchNorm2d(2 * num_filters),
             nn.LeakyReLU(0.2, True),
-            # state size: (2 x nf) x 56 x 56
-            nn.ConvTranspose2d(2 * self.nf, self.nf, 5, 2, 1),
-            nn.BatchNorm2d(self.nf),
+            # state size: (2 x nf) x 55 x 55
+            nn.ConvTranspose2d(2 * num_filters, num_filters, 5, 2),
+            nn.BatchNorm2d(num_filters),
             nn.LeakyReLU(0.2, True),
             # state size: (nf) x 113 x 113
-            nn.ConvTranspose2d(self.nf, self.nc, 5, 2, 1),
+            nn.ConvTranspose2d(num_filters, num_in_channels, 5, 2, 1),
             nn.Tanh()
             # state size: (L) x 227 x 227
         )
 
-        # init weights
-        self.encoder.apply(weight_init)
-        self.z.apply(weight_init)
-        self.decoder.apply(weight_init)
+
 
     def encode(self, x):
         return self.z(self.encoder(x))
@@ -89,6 +83,11 @@ class AE(nn.Module):
         z = self.encode(x)
         return self.decode(z), z, None
 
+    def weight_init(self):
+        self.encoder.apply(weight_init)
+        self.z.apply(weight_init)
+        self.decoder.apply(weight_init)
+
 
 # =============================================================================
 # Variational Autoencoder [default]
@@ -96,8 +95,8 @@ class AE(nn.Module):
 class VAE(AE):
     def __init__(self, num_in_channels, z_size, num_filters):
         super().__init__(num_in_channels, z_size, num_filters)
-        self.mu     = self.z                              # Mean μ of Z
-        self.logvar = nn.Conv2d(8 * self.nf, self.nz, 6)  # Log variance σ^2 of Z (diagonal covariance)
+        self.mu = self.z                                  # Mean μ of Z
+        self.logvar = nn.Conv2d(8 * num_filters, z_size, 6)  # Log variance σ^2 of Z (diagonal covariance)
 
         # init weights
         self.mu.apply(weight_init)
@@ -108,8 +107,8 @@ class VAE(AE):
         return self.mu(encoding_result), self.logvar(encoding_result)
 
     def reparametrize(self, mu, logvar):
-        std = logvar.mul(0.5).exp_() # Compute σ = exp(1/2 log σ^2)
-        if self.options.cuda:
+        std = logvar.mul(0.5).exp_()  # Compute σ = exp(1/2 log σ^2)
+        if torch.cuda.is_available():
             eps = torch.cuda.FloatTensor(std.size()).normal_()
         else:
             eps = torch.FloatTensor(std.size()).normal_()
