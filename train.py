@@ -40,7 +40,7 @@ parser.add_argument('--continue_train', action='store_true', default=False,
 # data related ----------------------------------------------------------------
 parser.add_argument('--dataset', type=str, required=True,
                     help="all | avenue | ped1 | ped2 | enter | exit. 'all' means using entire data")
-parser.add_argument('--data_root', type=str, required=True, help='path to base folder of entire datasets')
+parser.add_argument('--data_root', type=str, required=True, help='path to base folder of entire dataset')
 parser.add_argument('--image_size', type=int, default=227, help='input image size (width=height). default=227')
 parser.add_argument('--workers', type=int, default=2, help='number of data loading workers')
 # optimization related --------------------------------------------------------
@@ -110,12 +110,6 @@ except OSError:
     debug_print('WARNING: Cannot make network saving folder')
     pass
 
-tm_start = time.time()
-tm_epoch = time.time()
-tm_iter = time.time()
-tm_optimize = time.time()
-tm_forward = time.time()
-
 
 # =============================================================================
 # DATA PREPARATION
@@ -126,7 +120,7 @@ frames_per_sample = 10
 # set data loader
 options.dataset.replace(' ', '')  # remove white space
 dataset_paths = []
-if options.dataset is 'all':
+if 'all' == options.dataset:
     options.dataset = 'avenue|ped1|ped2|enter|exit'
 if 'avenue' in options.dataset:
     dataset_paths.append(options.data_root + '/avenue/train')
@@ -138,39 +132,39 @@ dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.bat
 print('Data loader is ready')
 
 
-# streaming buffer
-tm_buffer_set = time.time()
-input_batch = torch.FloatTensor(options.batch_size, frames_per_sample, options.image_size, options.image_size)
-recon_batch = torch.FloatTensor(options.batch_size, frames_per_sample, options.image_size, options.image_size)
-debug_print('Stream buffers are set: {} sec elapsed'.format(time.time() - tm_buffer_set))
-
-if options.cuda:
-    debug_print('Start transferring to CUDA')
-    tm_gpu_start = time.time()
-    input_batch = input_batch.cuda()
-    recon_batch = recon_batch.cuda()
-    debug_print('Transfer to GPU: {} sec elapsed'.format(time.time() - tm_gpu_start))
-
-tm_to_variable = time.time()
-input_batch = Variable(input_batch)
-recon_batch = Variable(recon_batch)
-debug_print('To Variable for Autograd: {} sec elapsed'.format(time.time() - tm_to_variable))
-
-print('Data streaming is ready')
+# # streaming buffer
+# tm_buffer_set = time.time()
+# input_batch = torch.FloatTensor(options.batch_size, frames_per_sample, options.image_size, options.image_size)
+# recon_batch = torch.FloatTensor(options.batch_size, frames_per_sample, options.image_size, options.image_size)
+# debug_print('Stream buffers are set: %.3f sec elapsed' % (time.time() - tm_buffer_set))
+#
+# if options.cuda:
+#     debug_print('Start transferring to CUDA')
+#     tm_gpu_start = time.time()
+#     input_batch = input_batch.cuda()
+#     recon_batch = recon_batch.cuda()
+#     debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
+#
+# tm_to_variable = time.time()
+# input_batch = Variable(input_batch)
+# recon_batch = Variable(recon_batch)
+# debug_print('To Variable for Autograd: %.3f sec elapsed' % (time.time() - tm_to_variable))
+#
+# print('Data streaming is ready')
 
 # =============================================================================
 # MODEL & LOSS FUNCTION
 # =============================================================================
 
 # create model instance
-if options.model == 'AE':
+if 'AE' == options.model:
     model = AE(frames_per_sample, options.nz, options.nf)
-elif options.model == 'VAE':
+elif 'VAE' == options.model:
     model = VAE(frames_per_sample, options.nz, options.nf)
 assert model
-print('{} is generated'.format(options.model))
+print(options.model + ' is generated')
 
-# criterions
+# criterion
 reconstruction_loss = nn.MSELoss()
 variational_loss = nn.KLDivLoss()
 
@@ -181,7 +175,7 @@ if options.cuda:
     model.cuda()
     reconstruction_loss.cuda()
     variational_loss.cuda()
-    debug_print('Transfer to GPU: {} sec elapsed'.format(time.time() - tm_gpu_start))
+    debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
 
 # for display
 mse_loss, kld_loss, reg_l1_loss, reg_l2_loss = 0, 0, 0, 0
@@ -198,48 +192,98 @@ def loss_function(recon_x, x, mu=None, logvar=None):
         kld_element = mu.pow(2).add_(logvar.exp()).mul_(-1).add_(1).add_(logvar)
         kld_loss = torch.sum(kld_element).mul_(-0.5)
         loss += kld_loss
-    if options.coefL1 != 0.0:
+    if 0.0 != options.coefL1:
         reg_l1_loss = options.l1_coef * torch.norm(params, 1)
         # params.data -= options.learning_rate * params.grad.data
         loss += reg_l1_loss
-    if options.coefL2 != 0.0:
+    if 0.0 != options.coefL2:
         reg_l2_loss = options.l2_coef * torch.norm(params, 2) ^ 2 / 2
         loss += reg_l2_loss
 
     return loss
 
 
+def save_model(filename):
+    torch.save(model.state_dict(), '%s/%s' % (options.save_path, filename))
+    print('Model is saved at ' + filename)
+
+
 # =============================================================================
 # OPTIMIZATION
 # =============================================================================
+
 print('Start training...')
 model.train()
 
 optimizer = optim.Adam(model.parameters(), lr=options.learning_rate, betas=(options.beta1, 0.999))
-#
+
+total_loss_history = []
+recon_loss_history = []
+variational_loss_history = []
+reg_l1_loss_history = []
+reg_l2_loss_history = []
+
+tm_data_load_total = 0
+tm_iter_total = 0
+tm_train_start = time.time()
+
 iter_count = 0
+
 for epoch in range(options.epochs):
-    train_loss = 0;
-    for iter, data in enumerate(dataloader, 0):
+    tm_cur_iter_start = time.time()
+    for i, input_batch in enumerate(dataloader, 0):
 
         # data feed
-        batch_size = data.size(0)
-        input_batch.data.resize_(data.size()).copy_(data)
-        recon_batch.data.resize_(data.size())
+        input_batch = Variable(input_batch)
+        if options.cuda:
+            input_batch = input_batch.cuda()
+        # batch_size = data.size(0)
+        # input_batch.data.resize_(data.size()).copy_(data)
+        # recon_batch.data.resize_(data.size())
+
+        tm_train_start = time.time()
 
         # forward
         model.zero_grad()
         recon_batch, mu_batch, logvar_batch = model(input_batch)
 
         # backward
-        loss = loss_function(recon_batch, input_batch, mu_batch, logvar_batch)
+        loss = loss_function(recon_x=recon_batch, x=input_batch, mu=mu_batch, logvar=logvar_batch)
         loss.backward()
-        train_loss += loss.data[0]
+        total_loss_history.append(loss.data[0])
         optimizer.step()
 
+        tm_train_iter_consume = time.time() - tm_train_start
+
         # visualize
+        tm_visualize_start = time.time()
         # TODO: visualize input / reconstruction pair
         # TODO: find input index and set latent vector of that index
+        tm_visualize_consume = time.time() - tm_visualize_start
+
+        recon_loss_history.append(mse_loss)
+        variational_loss_history.append(kld_loss)
+        reg_l1_loss_history.append(reg_l1_loss)
+        reg_l2_loss_history.append(reg_l2_loss)
+
+        print('[%02d/%02d][%04d/%04d] Iter:%06d Total: %.4f Recon: %.4f Var: %.4f L1: %.4f L2: %.4f'
+              % (epoch, options.epochs, i, len(dataloader), iter_count,
+                 loss.data[0], mse_loss, kld_loss, reg_l1_loss, reg_l2_loss))
+
+        # checkpoint w.r.t. iteration number
+        iter_count += 1
+        if 0 == iter_count % options.save_freq:
+            save_model('%s_%s_iter_%03d.pth' % (options.dataset, options.model, iter_count))
+
+        tm_iter_consume = time.time() - tm_cur_iter_start
+        print('\tTime consume (secs) Total: %.3f CurIter: %.3f, Train: %.3f, Vis.: %.3f ETC: %.3f'
+              % (time.time() - tm_train_start, tm_iter_consume, tm_train_iter_consume, tm_visualize_consume,
+                 tm_iter_consume - tm_train_iter_consume - tm_visualize_consume))
+        tm_cur_iter_start = time.time()
+
+    print('====> Epoch %d is ternimated: Total loss is %f' % (epoch, total_loss_history[-1]))
+    # checkpoint w.r.t. epoch
+    save_model('%s_%s_epoch_%03d.pth' % (options.dataset, options.model, epoch))
 
 
 #()()
