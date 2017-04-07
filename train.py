@@ -3,6 +3,8 @@ import argparse
 import os
 import random
 import time
+import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.nn.parallel
@@ -13,7 +15,6 @@ import torch.optim as optim
 import torchvision.transforms as transforms
 import torchvision.utils as vutils
 from torch.autograd import Variable
-
 from models import AE, VAE
 from data import VideoClipSets
 
@@ -75,8 +76,6 @@ parser.add_argument('--debug_print', action='store_true', default=False, help='p
 
 options = parser.parse_args()
 
-# TODO: visdom package handling
-
 # seed
 if options.random_seed is None:
     options.random_seed = random.randint(1, 10000)
@@ -97,14 +96,20 @@ torch.manual_seed(options.random_seed)
 if cuda_available:
     torch.cuda.manual_seed_all(options.random_seed)
 
+cudnn.benchmark = True
+
 # network saving
 save_path = options.save_path + '/' + options.model
 try:
     os.makedirs(save_path)
 except OSError:
-    debug_print('WARNING: Cannot make network saving folder')
+    debug_print('WARNING: Cannot make saving folder')
     pass
 
+# visualization
+if options.display:
+    from visdom import Visdom
+    viz = Visdom()
 
 # =============================================================================
 # DATA PREPARATION
@@ -126,7 +131,6 @@ dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.bat
                                          num_workers=options.workers)
 print('Data loader is ready')
 
-
 # streaming buffer
 tm_buffer_set = time.time()
 input_batch = torch.FloatTensor(options.batch_size, frames_per_sample, options.image_size, options.image_size)
@@ -145,6 +149,15 @@ input_batch = Variable(input_batch)
 recon_batch = Variable(recon_batch)
 debug_print('To Variable for Autograd: %.3f sec elapsed' % (time.time() - tm_to_variable))
 
+viz_target_frame_index = int(options.nc / 2)
+
+
+def sample_batch_to_image(batch_data):
+    single_image = batch_data[0, viz_target_frame_index].cpu().numpy()
+    # un-normalize
+    return np.uint8(single_image[np.newaxis, :, :].repeat(3, axis=0))
+
+
 print('Data streaming is ready')
 
 
@@ -153,6 +166,7 @@ print('Data streaming is ready')
 # =============================================================================
 
 # create model instance
+# TODO: load pretrained model
 if 'AE' == options.model:
     model = AE(num_in_channels=frames_per_sample, z_size=options.nz, num_filters=options.nf)
 elif 'VAE' == options.model:
@@ -179,23 +193,31 @@ params = model.parameters()
 
 def loss_function(recon_x, x, mu=None, logvar=None):
     # thanks to Autograd, you can train the net by just summing-up all losses and propagating them
-    mse_loss = reconstruction_loss(recon_x, x)
-    loss = mse_loss
+    recon_loss = reconstruction_loss(recon_x, x)
+    total_loss = recon_loss
+    loss_info = {'recon': recon_loss.data[0], 'variational': 0, 'l1_reg': 0, 'l2_reg': 0}
+
     if options.variational:
         assert mu is not None and logvar is not None
         # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
         kld_element = mu.pow(2).add_(logvar.exp()).mul_(-1).add_(1).add_(logvar)
         kld_loss = torch.sum(kld_element).mul_(-0.5)
-        loss += kld_loss
-    if 0.0 != options.l1_coef:
-        reg_l1_loss = options.l1_coef * torch.norm(params, 1)
-        # params.data -= options.learning_rate * params.grad.data
-        loss += reg_l1_loss
-    if 0.0 != options.l2_coef:
-        reg_l2_loss = options.l2_coef * torch.norm(params, 2) ^ 2 / 2
-        loss += reg_l2_loss
+        loss_info['variational'] = kld_loss.data[0]
+        total_loss += kld_loss
 
-    return loss, mse_loss, kld_loss, reg_l1_loss, reg_l2_loss
+    # TODO: check the effect of losses at below
+    if 0.0 != options.l1_coef:
+        l1_loss = options.l1_coef * torch.norm(params, 1)
+        loss_info['l1_reg'] = l1_loss.data[0]
+        # params.data -= options.learning_rate * params.grad.data
+        total_loss += l1_loss
+
+    if 0.0 != options.l2_coef:
+        l2_loss = options.l2_coef * torch.norm(params, 2) ^ 2 / 2
+        loss_info['l2_reg'] = l2_loss.data[0]
+        total_loss += l2_loss
+
+    return total_loss, loss_info
 
 
 def save_model(filename):
@@ -222,8 +244,8 @@ tm_data_load_total = 0
 tm_iter_total = 0
 tm_loop_start = time.time()
 
+# TODO: modify iter_count and epoch range with pretrained model's metadata
 iter_count = 0
-
 for epoch in range(options.epochs):
     tm_cur_iter_start = time.time()
     for i, data in enumerate(dataloader, 0):
@@ -238,8 +260,7 @@ for epoch in range(options.epochs):
         model.zero_grad()
         recon_batch, mu_batch, logvar_batch = model(input_batch)
         # backward
-        loss, mse_loss, kld_loss, reg_l1_loss, reg_l2_loss = \
-            loss_function(recon_x=recon_batch, x=input_batch, mu=mu_batch, logvar=logvar_batch)
+        loss, loss_detail = loss_function(recon_x=recon_batch, x=input_batch, mu=mu_batch, logvar=logvar_batch)
         loss.backward()
         # update
         optimizer.step()
@@ -247,20 +268,35 @@ for epoch in range(options.epochs):
 
         # logging losses
         total_loss_history.append(loss.data[0])
-        recon_loss_history.append(mse_loss.data[0])
-        variational_loss_history.append(kld_loss.data[0])
-        reg_l1_loss_history.append(reg_l1_loss.data[0])
-        reg_l2_loss_history.append(reg_l2_loss.data[0])
+        recon_loss_history.append(loss_detail['recon'])
+        variational_loss_history.append(loss_detail['variational'])
+        reg_l1_loss_history.append(loss_detail['l1_reg'])
+        reg_l2_loss_history.append(loss_detail['l2_reg'])
 
         # visualize
         tm_visualize_start = time.time()
-        # TODO: visualize input / reconstruction pair
-        # TODO: find input index and set latent vector of that index
+        if options.display:
+
+            # TODO: visualize input / reconstruction pair
+            viz_input_frame = sample_batch_to_image(data)
+            viz_recon_frame = sample_batch_to_image(recon_batch.data)
+            if 0 == iter_count:
+                print(viz_input_frame.shape)
+                viz_input = viz.image(viz_input_frame, opts=dict(title='Input frame'))
+                viz_recon = viz.image(viz_recon_frame, opts=dict(title='Reconstructed frame'))
+            else:
+                viz.image(viz_input_frame, win=viz_input)
+                viz.image(viz_recon_frame, win=viz_recon)
+
+            # TODO: visualize latent space
+            # TODO: plot loss graphs
+
         tm_visualize_consume = time.time() - tm_visualize_start
 
         print('[%02d/%02d][%04d/%04d] Iter:%06d Total: %.4f Recon: %.4f Var: %.4f L1: %.4f L2: %.4f'
               % (epoch, options.epochs, i, len(dataloader), iter_count,
-                 loss.data[0], mse_loss, kld_loss, reg_l1_loss, reg_l2_loss))
+                 loss.data[0], loss_detail['recon'], loss_detail['variational'], loss_detail['l1_reg'],
+                 loss_detail['l2_reg']))
 
         iter_count += 1
         # # checkpoint w.r.t. iteration number
@@ -271,6 +307,9 @@ for epoch in range(options.epochs):
         print('\tTime consume (secs) Total: %.3f CurIter: %.3f, Train: %.3f, Vis.: %.3f ETC: %.3f'
               % (time.time() - tm_loop_start, tm_iter_consume, tm_train_iter_consume, tm_visualize_consume,
                  tm_iter_consume - tm_train_iter_consume - tm_visualize_consume))
+
+        # TODO: save latest network with metadata containing saved network
+
         tm_cur_iter_start = time.time()
 
     print('====> Epoch %d is ternimated: Total loss is %f' % (epoch, total_loss_history[-1]))
