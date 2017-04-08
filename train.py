@@ -1,10 +1,8 @@
-import importlib
 import argparse
 import os
 import random
 import time
 import numpy as np
-
 import torch
 import torch.nn as nn
 import torch.nn.parallel
@@ -12,8 +10,6 @@ import torch.nn.init
 import torch.utils.data
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
-import torchvision.transforms as transforms
-import torchvision.utils as vutils
 from torch.autograd import Variable
 from models import AE, VAE
 from data import VideoClipSets
@@ -115,8 +111,6 @@ if options.display:
 # DATA PREPARATION
 # =============================================================================
 
-frames_per_sample = options.nc
-
 # set data loader
 options.dataset.replace(' ', '')  # remove white space
 dataset_paths = []
@@ -133,8 +127,8 @@ print('Data loader is ready')
 
 # streaming buffer
 tm_buffer_set = time.time()
-input_batch = torch.FloatTensor(options.batch_size, frames_per_sample, options.image_size, options.image_size)
-recon_batch = torch.FloatTensor(options.batch_size, frames_per_sample, options.image_size, options.image_size)
+input_batch = torch.FloatTensor(options.batch_size, options.nc, options.image_size, options.image_size)
+recon_batch = torch.FloatTensor(options.batch_size, options.nc, options.image_size, options.image_size)
 debug_print('Stream buffers are set: %.3f sec elapsed' % (time.time() - tm_buffer_set))
 
 if cuda_available:
@@ -157,7 +151,6 @@ def sample_batch_to_image(batch_data):
     # un-normalize
     return np.uint8(single_image[np.newaxis, :, :].repeat(3, axis=0))
 
-
 print('Data streaming is ready')
 
 
@@ -168,9 +161,9 @@ print('Data streaming is ready')
 # create model instance
 # TODO: load pretrained model
 if 'AE' == options.model:
-    model = AE(num_in_channels=frames_per_sample, z_size=options.nz, num_filters=options.nf)
+    model = AE(num_in_channels=options.nc, z_size=options.nz, num_filters=options.nf)
 elif 'VAE' == options.model:
-    model = VAE(num_in_channels=frames_per_sample, z_size=options.nz, num_filters=options.nf)
+    model = VAE(num_in_channels=options.nc, z_size=options.nz, num_filters=options.nf)
 assert model
 print(options.model + ' is generated')
 
@@ -288,7 +281,7 @@ for epoch in range(options.epochs):
                 viz.image(viz_input_frame, win=viz_input)
                 viz.image(viz_recon_frame, win=viz_recon)
 
-            # TODO: visualize latent space
+            # TODO: visualize latent space -> to testing code
             # TODO: plot loss graphs
 
         tm_visualize_consume = time.time() - tm_visualize_start
