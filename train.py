@@ -103,6 +103,7 @@ except OSError:
     pass
 
 # visualization
+win_loss = None
 if options.display:
     from visdom import Visdom
     viz = Visdom()
@@ -150,6 +151,44 @@ def sample_batch_to_image(batch_data):
     single_image = batch_data[0, viz_target_frame_index].cpu().numpy()
     # un-normalize
     return np.uint8(single_image[np.newaxis, :, :].repeat(3, axis=0))
+
+
+def draw_loss_function(win, losses, iter):
+    cur_loss = np.zeros([1, len(losses.values())])
+    x_values = np.ones([1, len(losses.values())]) * iter
+    for i, value in enumerate(losses.values()):
+        cur_loss[0][i] = value
+
+    if win is None:
+        legends = []
+        for key in losses.keys():
+            legends.append(key)
+        win = viz.line(X=x_values, Y=cur_loss,
+            opts=dict(
+                title='losses at each iteration',
+                xlabel='iterations',
+                ylabel='loss',
+                xtype='linear',
+                ytype='linear',
+                legend=legends,
+                makers=False
+            )
+        )
+    else:
+        viz.line(X=x_values, Y=cur_loss, win=win, update='append')
+
+    return win
+
+
+def get_loss_string(losses):
+    str_losses = 'Total: %.4f Recon: %.4f' % (losses['total'], losses['recon'])
+    if 'variational' in losses:
+        str_losses += ' Var: %.4f' % (losses['variational'])
+    if 'l1_reg' in losses:
+        str_losses += ' L1: %.4f' % (losses['l1_reg'])
+    if 'l2_reg' in losses:
+        str_losses += ' L2: %.4f' % (losses['l2_reg'])
+    return str_losses
 
 print('Data streaming is ready')
 
@@ -210,6 +249,8 @@ def loss_function(recon_x, x, mu=None, logvar=None):
         loss_info['l2_reg'] = l2_loss.data[0]
         total_loss += l2_loss
 
+    loss_info['total'] = total_loss.data[0]
+
     return total_loss, loss_info
 
 
@@ -228,10 +269,6 @@ model.train()
 optimizer = optim.Adam(model.parameters(), lr=options.learning_rate, betas=(options.beta1, 0.999))
 
 total_loss_history = []
-recon_loss_history = []
-variational_loss_history = []
-reg_l1_loss_history = []
-reg_l2_loss_history = []
 
 tm_data_load_total = 0
 tm_iter_total = 0
@@ -261,16 +298,12 @@ for epoch in range(options.epochs):
 
         # logging losses
         total_loss_history.append(loss.data[0])
-        recon_loss_history.append(loss_detail['recon'])
-        variational_loss_history.append(loss_detail['variational'])
-        reg_l1_loss_history.append(loss_detail['l1_reg'])
-        reg_l2_loss_history.append(loss_detail['l2_reg'])
 
         # visualize
         tm_visualize_start = time.time()
         if options.display:
 
-            # TODO: visualize input / reconstruction pair
+            # visualize input / reconstruction pair
             viz_input_frame = sample_batch_to_image(data)
             viz_recon_frame = sample_batch_to_image(recon_batch.data)
             if 0 == iter_count:
@@ -281,34 +314,33 @@ for epoch in range(options.epochs):
                 viz.image(viz_input_frame, win=viz_input)
                 viz.image(viz_recon_frame, win=viz_recon)
 
-            # TODO: visualize latent space -> to testing code
-            # TODO: plot loss graphs
+            # plot loss graphs
+            win_loss = draw_loss_function(win_loss, loss_detail, iter_count)
 
         tm_visualize_consume = time.time() - tm_visualize_start
-
-        print('[%02d/%02d][%04d/%04d] Iter:%06d Total: %.4f Recon: %.4f Var: %.4f L1: %.4f L2: %.4f'
-              % (epoch, options.epochs, i, len(dataloader), iter_count,
-                 loss.data[0], loss_detail['recon'], loss_detail['variational'], loss_detail['l1_reg'],
-                 loss_detail['l2_reg']))
 
         iter_count += 1
         # # checkpoint w.r.t. iteration number
         # if 0 == iter_count % options.save_freq:
         #     save_model('%s_%s_iter_%03d.pth' % (options.dataset, options.model, iter_count))
 
+        # TODO: save latest network with metadata containing saved network
+
         tm_iter_consume = time.time() - tm_cur_iter_start
+        tm_cur_iter_start = time.time()  # to measure the time of enumeration of the loop controller, set timer at here
+
+        # print iteration's summary
+        print('[%02d/%02d][%04d/%04d] Iter:%06d %s'
+              % (epoch+1, options.epochs, i, len(dataloader), iter_count, get_loss_string(loss_detail)))
+
         print('\tTime consume (secs) Total: %.3f CurIter: %.3f, Train: %.3f, Vis.: %.3f ETC: %.3f'
               % (time.time() - tm_loop_start, tm_iter_consume, tm_train_iter_consume, tm_visualize_consume,
                  tm_iter_consume - tm_train_iter_consume - tm_visualize_consume))
 
-        # TODO: save latest network with metadata containing saved network
-
-        tm_cur_iter_start = time.time()
-
-    print('====> Epoch %d is ternimated: Total loss is %f' % (epoch, total_loss_history[-1]))
+    print('====> Epoch %d is ternimated: Total loss is %f' % (epoch+1, total_loss_history[-1]))
 
     # checkpoint w.r.t. epoch
-    if 0 == epoch % options.save_freq:
+    if 0 == (epoch+1) % options.save_freq:
         save_model('%s_%s_epoch_%03d.pth' % (options.dataset, options.model, epoch))
 
 
