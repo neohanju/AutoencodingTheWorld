@@ -1,6 +1,5 @@
 import os
 import subprocess as sp
-import sys
 from PIL import Image
 import numpy
 import shutil
@@ -13,8 +12,8 @@ DATASET_PATH = '/home/leejeyeol/Datasets'
 
 number_of_images_in_dataset_all = 0
 
-target_rows = 227
-target_cols = 227
+target_rows = 113
+target_cols = 113
 
 target_length = 10
 frame_stride = 2
@@ -127,10 +126,9 @@ def Make_mean_image():
                     imarr = numpy.array(Image.open(image_path+'/'+im), dtype=numpy.float)
                     imarr = imarr/255 #normalize
                     mean_image = mean_image + imarr
-
-        mean_image = mean_image / number_of_images_in_dataset_all
-        numpy.save(os.path.join(DATASET_PATH + '/' + datasets[dataset_name]['dataset'] + '/mean_image'), mean_image)
-        Image.fromarray(mean_image*255).show()
+            mean_image = mean_image / number_of_images_in_dataset_all
+            numpy.save(os.path.join(DATASET_PATH + '/' + datasets[dataset_name]['dataset'] + '/mean_image'), mean_image)
+            Image.fromarray(mean_image*255).show()
                 #out.show()
     print("===============Make mean image done==================")
     return
@@ -151,8 +149,8 @@ def Generate_sample():
 
         for video in range(1, datasets[dataset_name]['num_videos'] + 1):
             if(datasets[dataset_name]['type']=='test'):
-               if not os.path.exists(datasets[dataset_name]['path'] + '/finalDataset_%02d' % video):
-                    os.makedirs(datasets[dataset_name]['path'] + '/finalDataset_%02d' % video)
+               if not os.path.exists(datasets[dataset_name]['path'] + '/testDataset_%02d' % video):
+                    os.makedirs(datasets[dataset_name]['path'] + '/testDataset_%02d' % video)
 
             sampled_image_path = datasets[dataset_name]['path'] + '/%02d' % video + '/sampled_image'
             allfiles = os.listdir(sampled_image_path)
@@ -162,13 +160,17 @@ def Generate_sample():
 
             for im in imglist:
                 imarr = numpy.array(Image.open(sampled_image_path + '/' + im), dtype=numpy.float)
-                out = imarr - mean_image*255
 
+                #전처리 부분 함수화 하기 .
+                out = imarr/255 - mean_image
                 torch.save(out, sampled_image_path + '/' + im[:-4]+'.t7')
 
+                #-todo change sampled image(just for test)
+                out = numpy.abs(out)
+                out = out*255
+                out= numpy.array(numpy.round(out), dtype=numpy.uint8)
 
-                out2 = numpy.array(numpy.round(out),dtype=numpy.uint8)
-                Image.fromarray(out2*255, mode="L").save(sampled_image_path + '/' + im)#image visualize
+                Image.fromarray(out, mode="L").save(sampled_image_path + '/' + im)#image visualize
 
             allfiles = os.listdir(sampled_image_path)
             imglist = [filename for filename in allfiles if filename[-3:] in [".t7", ".T7"]]
@@ -177,11 +179,10 @@ def Generate_sample():
             while (1):
                 if (j > num_of_images):
                     break
- #               datatsr= [numpy.array(Image.open(sampled_image_path + '/' + imglist[k]), dtype=numpy.float) for k in range(i, i + target_length)]
+                #datatsr= [numpy.array(Image.open(sampled_image_path + '/' + imglist[k]), dtype=numpy.float) for k in range(i, i + target_length)]
                 datatsr= [torch.load(sampled_image_path + '/' + imglist[k]) for k in range(i, i + target_length)]
 
                 if(datasets[dataset_name]['type']=='train'):
-                    numpy.
                     torch.save(datatsr, final_datasample_path+'/%06d.t7' % h)
                 elif(datasets[dataset_name]['type']=='test'):
                     torch.save(datatsr, datasets[dataset_name]['path'] + '/finalDataset_%02d' % video +'/%06d.t7' % h)
