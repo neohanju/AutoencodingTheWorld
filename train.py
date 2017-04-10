@@ -95,7 +95,7 @@ if cuda_available:
 cudnn.benchmark = True
 
 # network saving
-save_path = options.save_path + '/' + options.model
+save_path = os.path.join(options.save_path, options.model)
 try:
     os.makedirs(save_path)
 except OSError:
@@ -115,10 +115,12 @@ if options.display:
 # set data loader
 options.dataset.replace(' ', '')  # remove white space
 dataset_paths = []
+mean_images = {}
 if 'all' == options.dataset:
     options.dataset = 'avenue|ped1|ped2|enter|exit'
 if 'avenue' in options.dataset:
-    dataset_paths.append(options.data_root + '/avenue/train')
+    dataset_paths.append(os.path.join(options.data_root, 'avenue', 'train'))
+    mean_images['avenue'] = np.load(os.path.join(options.data_root, 'avenue', 'mean_image.npy'))
 # TODO: tokenize dataset string with '|'
 
 dataset = VideoClipSets(dataset_paths)
@@ -147,10 +149,22 @@ debug_print('To Variable for Autograd: %.3f sec elapsed' % (time.time() - tm_to_
 viz_target_frame_index = int(options.nc / 2)
 
 
+def pick_frame_from_batch(batch_data):
+    return batch_data[0, viz_target_frame_index].cpu().numpy()
+
+
+def gray_single_to_image(image):
+    return np.uint8(image[np.newaxis, :, :].repeat(3, axis=0))
+
+
 def sample_batch_to_image(batch_data):
-    single_image = batch_data[0, viz_target_frame_index].cpu().numpy()
+    single_image = (pick_frame_from_batch(batch_data) + 0.5) * 255  # [-1, +1] to [0, 255]
     # un-normalize
-    return np.uint8(single_image[np.newaxis, :, :].repeat(3, axis=0))
+    return gray_single_to_image(single_image)
+
+
+def decentering(image, dataset='avenue'):
+    return gray_single_to_image(image * 255 + mean_images[dataset])
 
 
 def draw_loss_function(win, losses, iter):
@@ -227,7 +241,7 @@ def loss_function(recon_x, x, mu=None, logvar=None):
     # thanks to Autograd, you can train the net by just summing-up all losses and propagating them
     recon_loss = reconstruction_loss(recon_x, x)
     total_loss = recon_loss
-    loss_info = {'recon': recon_loss.data[0], 'variational': 0, 'l1_reg': 0, 'l2_reg': 0}
+    loss_info = {'recon': recon_loss.data[0]}
 
     if options.variational:
         assert mu is not None and logvar is not None
@@ -304,15 +318,21 @@ for epoch in range(options.epochs):
         if options.display:
 
             # visualize input / reconstruction pair
-            viz_input_frame = sample_batch_to_image(data)
-            viz_recon_frame = sample_batch_to_image(recon_batch.data)
+            viz_input_frame = decentering(pick_frame_from_batch(data))
+            viz_input_data = sample_batch_to_image(data)
+            viz_recon_data = sample_batch_to_image(recon_batch.data)
+            viz_recon_frame = decentering(pick_frame_from_batch(recon_batch.data))
             if 0 == iter_count:
                 print(viz_input_frame.shape)
-                viz_input = viz.image(viz_input_frame, opts=dict(title='Input frame'))
-                viz_recon = viz.image(viz_recon_frame, opts=dict(title='Reconstructed frame'))
+                win_input_frame = viz.image(viz_input_frame, opts=dict(title='Input'))
+                win_input_data = viz.image(viz_input_data, opts=dict(title='Input'))
+                win_recon_data = viz.image(viz_recon_data, opts=dict(title='Reconstruction'))
+                win_recon_frame = viz.image(viz_recon_frame, opts=dict(title='Reconstructed video frame'))
             else:
-                viz.image(viz_input_frame, win=viz_input)
-                viz.image(viz_recon_frame, win=viz_recon)
+                viz.image(viz_input_frame, win=win_input_frame)
+                viz.image(viz_input_data, win=win_input_data)
+                viz.image(viz_recon_data, win=win_recon_data)
+                viz.image(viz_recon_frame, win=win_recon_frame)
 
             # plot loss graphs
             win_loss = draw_loss_function(win_loss, loss_detail, iter_count)
