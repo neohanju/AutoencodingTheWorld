@@ -158,7 +158,7 @@ def gray_single_to_image(image):
 
 
 def sample_batch_to_image(batch_data):
-    single_image = (pick_frame_from_batch(batch_data) + 0.5) * 0.5 * 255  # [-1, +1] to [0, 255]
+    single_image = ((pick_frame_from_batch(batch_data) * 0.5) + 0.5) * 255  # [-1, +1] to [0, 255]
     # un-normalize
     return gray_single_to_image(single_image)
 
