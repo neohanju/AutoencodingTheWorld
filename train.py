@@ -151,7 +151,7 @@ def reconstruction_error(data, recon_data):
 
 def pick_frame_from_batch(batch_data):
     return batch_data[0, viz_target_frame_index].cpu().numpy()
-
+#test
 
 def gray_single_to_image(image):
     return np.uint8(image[np.newaxis, :, :].repeat(3, axis=0))
