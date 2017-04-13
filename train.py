@@ -29,7 +29,7 @@ parser = argparse.ArgumentParser(description='Detecting abnormal behavior in vid
 # model related ---------------------------------------------------------------
 parser.add_argument('--model', type=str, required=True, help='AE | AE_LTR | VAE | VAE_LTR')
 parser.add_argument('--nc', type=int, default=10, help='number of input channel. default=10')
-parser.add_argument('--nz', type=int, default=200, help='size of the latent z vector. default=100')
+parser.add_argument('--nz', type=int, default=2000, help='size of the latent z vector. default=100')
 parser.add_argument('--nf', type=int, default=64, help='size of lowest image filters. default=64')
 parser.add_argument('--l1_coef', type=float, default=0, help='coef of L1 regularization on the weights. default=0')
 parser.add_argument('--l2_coef', type=float, default=0, help='coef of L2 regularization on the weights. default=0')
@@ -103,6 +103,14 @@ except OSError:
 
 # visualization
 win_loss = None
+win_images = dict(
+    exist=False,
+    input_frame=None,
+    input_data=None,
+    recon_data=None,
+    recon_frame=None,
+    recon_error=None
+)
 if options.display:
     from visdom import Visdom
     viz = Visdom()
@@ -148,12 +156,10 @@ debug_print('To Variable for Autograd: %.3f sec elapsed' % (time.time() - tm_to_
 viz_target_sample_index = 0
 viz_target_frame_index = int(options.nc / 2)
 
-def reconstruction_error(data, recon_data):
-    return gray_single_to_image(np.abs(recon_data-data)*255)
 
 def pick_frame_from_batch(batch_data):
     return batch_data[viz_target_sample_index, viz_target_frame_index].cpu().numpy()
-#test
+
 
 def gray_single_to_image(image):
     return np.uint8(image[np.newaxis, :, :].repeat(3, axis=0))
@@ -167,6 +173,35 @@ def sample_batch_to_image(batch_data):
 
 def decentering(image, dataset='avenue'):
     return gray_single_to_image(image * 255 + mean_images[dataset])
+
+
+def draw_images(win_dict, input_batch, recon_batch):
+    # visualize input / reconstruction pair
+    input_data = pick_frame_from_batch(input_batch)
+    recon_data = pick_frame_from_batch(recon_batch)
+    viz_input_frame = decentering(input_data, setnames[viz_target_sample_index])
+    viz_input_data = sample_batch_to_image(input_batch)
+    viz_recon_data = sample_batch_to_image(recon_batch)
+    # viz_recon_frame = decentering(recon_data, setnames[viz_target_sample_index])
+    # viz_recon_error = np.flip(np.abs(input_data - recon_data), 0)  # for reverse y-axis in heat map
+    viz_recon_error = gray_single_to_image(np.abs(input_data - recon_data) * 127.5)
+    if not win_dict['exist']:
+        win_dict['exist'] = True
+        win_dict['input_frame'] = viz.image(viz_input_frame, opts=dict(title='Input'))
+        win_dict['input_data'] = viz.image(viz_input_data, opts=dict(title='Input'))
+        win_dict['recon_data'] = viz.image(viz_recon_data, opts=dict(title='Reconstruction'))
+        # win_dict['recon_frame'] = viz.image(viz_recon_frame, opts=dict(title='Reconstructed video frame'))
+        # win_dict['recon_error'] = viz.heatmap(X=viz_recon_error,
+        #                                       opts=dict(title='Reconstruction error', xmin=0, xmax=2))
+        win_dict['recon_error'] = viz.image(viz_recon_error, opts=dict(title='Reconstruction error'))
+    else:
+        viz.image(viz_input_frame, win=win_dict['input_frame'])
+        viz.image(viz_input_data, win=win_dict['input_data'])
+        viz.image(viz_recon_data, win=win_dict['recon_data'])
+        # viz.image(viz_recon_frame, win=win_dict['recon_frame'])
+        # viz.heatmap(X=viz_recon_error, win=win_dict['recon_error'])
+        viz.image(viz_recon_error, win=win_dict['recon_error'])
+    return win_dict
 
 
 def draw_loss_function(win, losses, iter):
@@ -192,7 +227,6 @@ def draw_loss_function(win, losses, iter):
         )
     else:
         viz.line(X=x_values, Y=cur_loss, win=win, update='append')
-
     return win
 
 
@@ -330,31 +364,8 @@ for epoch in range(options.epochs):
         # visualize
         tm_visualize_start = time.time()
         if options.display and 0 == iter_count % options.display_freq:
-
-            # visualize input / reconstruction pair
-            viz_input_frame = decentering(pick_frame_from_batch(data), setnames[viz_target_sample_index])
-            viz_input_data = sample_batch_to_image(data)
-            viz_recon_data = sample_batch_to_image(recon_batch.data)
-            viz_recon_frame = decentering(pick_frame_from_batch(recon_batch.data), setnames[viz_target_sample_index])
-            viz_recon_error = reconstruction_error(pick_frame_from_batch(data), pick_frame_from_batch(recon_batch.data))
-            if 0 == iter_count:
-                print(viz_input_frame.shape)
-                win_input_frame = viz.image(viz_input_frame, opts=dict(title='Input'))
-                win_input_data = viz.image(viz_input_data, opts=dict(title='Input'))
-                win_recon_data = viz.image(viz_recon_data, opts=dict(title='Reconstruction'))
-                win_recon_frame = viz.image(viz_recon_frame, opts=dict(title='Reconstructed video frame'))
-                win_recon_error = viz.image(viz_recon_error, opts=dict(title='Reconstruction error'))
-
-            else:
-                viz.image(viz_input_frame, win=win_input_frame)
-                viz.image(viz_input_data, win=win_input_data)
-                viz.image(viz_recon_data, win=win_recon_data)
-                viz.image(viz_recon_frame, win=win_recon_frame)
-                viz.image(viz_recon_error, win=win_recon_error)
-
-            # plot loss graphs
+            win_images = draw_images(win_images, data, recon_batch.data)
             win_loss = draw_loss_function(win_loss, loss_detail, iter_count)
-
         tm_visualize_consume = time.time() - tm_visualize_start
 
         # meta data
@@ -362,7 +373,7 @@ for epoch in range(options.epochs):
         train_info['total_loss'] = recent_loss
 
         iter_count += 1
-        save_model('%s_%s_latest.pth' % (options.dataset, options.model))
+        save_model('net_latest.pth')
         print_metadata('train_info', train_info)
 
         tm_iter_consume = time.time() - tm_cur_iter_start
