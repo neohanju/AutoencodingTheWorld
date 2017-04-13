@@ -147,10 +147,12 @@ debug_print('To Variable for Autograd: %.3f sec elapsed' % (time.time() - tm_to_
 
 viz_target_frame_index = int(options.nc / 2)
 
+def reconstruction_error(data, recon_data):
+    return gray_single_to_image(np.abs(recon_data-data)*255)
 
 def pick_frame_from_batch(batch_data):
     return batch_data[0, viz_target_frame_index].cpu().numpy()
-
+#test
 
 def gray_single_to_image(image):
     return np.uint8(image[np.newaxis, :, :].repeat(3, axis=0))
@@ -169,7 +171,7 @@ def decentering(image, dataset='avenue'):
 def draw_loss_function(win, losses, iter):
     cur_loss = np.zeros([1, len(losses.values())])
     x_values = np.ones([1, len(losses.values())]) * iter
-    for i, value in enumerate(losses.values()):
+    for i , value in enumerate(losses.values()):
         cur_loss[0][i] = value
 
     if win is None:
@@ -322,17 +324,21 @@ for epoch in range(options.epochs):
             viz_input_data = sample_batch_to_image(data)
             viz_recon_data = sample_batch_to_image(recon_batch.data)
             viz_recon_frame = decentering(pick_frame_from_batch(recon_batch.data))
+            viz_recon_error = reconstruction_error(pick_frame_from_batch(data), pick_frame_from_batch(recon_batch.data))
             if 0 == iter_count:
                 print(viz_input_frame.shape)
                 win_input_frame = viz.image(viz_input_frame, opts=dict(title='Input'))
                 win_input_data = viz.image(viz_input_data, opts=dict(title='Input'))
                 win_recon_data = viz.image(viz_recon_data, opts=dict(title='Reconstruction'))
                 win_recon_frame = viz.image(viz_recon_frame, opts=dict(title='Reconstructed video frame'))
+                win_recon_error = viz.image(viz_recon_error, opts=dict(title='Reconstruction error'))
+
             else:
                 viz.image(viz_input_frame, win=win_input_frame)
                 viz.image(viz_input_data, win=win_input_data)
                 viz.image(viz_recon_data, win=win_recon_data)
                 viz.image(viz_recon_frame, win=win_recon_frame)
+                viz.image(viz_recon_error, win=win_recon_error)
 
             # plot loss graphs
             win_loss = draw_loss_function(win_loss, loss_detail, iter_count)

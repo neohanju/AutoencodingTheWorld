@@ -43,3 +43,5 @@ Training.png
 # pycharm
 .idea/
 __pycache__/
+
+train.sh
