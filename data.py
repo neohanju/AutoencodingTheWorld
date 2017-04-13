@@ -25,7 +25,6 @@ class VideoClipSets(torch.utils.data.Dataset):
         return self.num_samples
 
     def __getitem__(self, item):
-        # TODO: load motion data
         return torch.load(self.filelist[item])
 
 

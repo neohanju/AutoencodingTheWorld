@@ -13,7 +13,7 @@ import torch.optim as optim
 from torch.autograd import Variable
 from models import AE, VAE, AE_LTR, VAE_LTR
 from data import VideoClipSets
-
+import tokenize
 
 def debug_print(arg):
     if not options.debug_print:
@@ -33,6 +33,7 @@ parser.add_argument('--nz', type=int, default=200, help='size of the latent z ve
 parser.add_argument('--nf', type=int, default=64, help='size of lowest image filters. default=64')
 parser.add_argument('--l1_coef', type=float, default=0, help='coef of L1 regularization on the weights. default=0')
 parser.add_argument('--l2_coef', type=float, default=0, help='coef of L2 regularization on the weights. default=0')
+parser.add_argument('--var_loss_coef', type=float, default=1.0, help='balancing coef of vairational loss. default=0')
 # training related ------------------------------------------------------------
 parser.add_argument('--batch_size', type=int, default=64, help='input batch size. default=64')
 parser.add_argument('--epochs', type=int, default=5000, help='number of epochs to train for. default=25')
@@ -50,13 +51,13 @@ parser.add_argument('--workers', type=int, default=2, help='number of data loadi
 # optimization related --------------------------------------------------------
 parser.add_argument('--optimiser', type=str, default='adam', help='type of optimizer: adagrad | adam')
 parser.add_argument('--learning_rate', type=float, default=0.0002, help='learning rate. default=0.0002')
-parser.add_argument('--weight_decay', type=float, default=0.0005,
-                    help='weight decay coefficient for regularization. default=0.0005')
+# parser.add_argument('--weight_decay', type=float, default=0.0005,
+#                     help='weight decay coefficient for regularization. default=0.0005')
 parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for Adam optimizer. default=0.5')
 # display related -------------------------------------------------------------
 parser.add_argument('--display', action='store_true', default=False,
                     help='visualize things with visdom or not. default=False')
-parser.add_argument('--display_freq', type=int, default=5, help='display frequency w.r.t. iterations. default=5')
+parser.add_argument('--display_freq', type=int, default=1, help='display frequency w.r.t. iterations. default=5')
 # GPU related -----------------------------------------------------------------
 parser.add_argument('--num_gpu', type=int, default=1, help='number of GPUs to use. default=1')
 # network saving related ------------------------------------------------------
@@ -75,9 +76,7 @@ options = parser.parse_args()
 # seed
 if options.random_seed is None:
     options.random_seed = random.randint(1, 10000)
-
-if options.model.find('VAE') != -1:
-    options.variational = True
+options.variational = options.model.find('VAE') != -1
 
 print(options)
 
@@ -118,10 +117,10 @@ dataset_paths = []
 mean_images = {}
 if 'all' == options.dataset:
     options.dataset = 'avenue|ped1|ped2|enter|exit'
-if 'avenue' in options.dataset:
-    dataset_paths.append(os.path.join(options.data_root, 'avenue', 'train'))
-    mean_images['avenue'] = np.load(os.path.join(options.data_root, 'avenue', 'mean_image.npy'))
-# TODO: tokenize dataset string with '|'
+dataset_names = options.dataset.split('|')
+for name in dataset_names:
+    dataset_paths.append(os.path.join(options.data_root, name, 'train'))
+    mean_images[name] = np.load(os.path.join(options.data_root, name, 'mean_image.npy'))
 
 dataset = VideoClipSets(dataset_paths)
 dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=True,
@@ -215,35 +214,35 @@ print('Data streaming is ready')
 # TODO: load pretrained model
 if 'AE_LTR' == options.model:
     model = AE_LTR(options.nc)
-    reconstruction_loss = nn.MSELoss(size_average=False)
 elif 'VAE_LTR' == options.model:
-    model = AE_LTR(options.nc)
-    reconstruction_loss = nn.MSELoss(size_average=False)
+    model = VAE_LTR(options.nc)
 elif 'AE' == options.model:
     model = AE(options.nc, options.nz, options.nf)
-    reconstruction_loss = nn.MSELoss(size_average=False)
 elif 'VAE' == options.model:
     model = VAE(options.nc, options.nz, options.nf)
-    reconstruction_loss = nn.MSELoss(size_average=False)
-assert model, reconstruction_loss
+assert model
 print(options.model + ' is generated')
 
+# criterions
+reconstruction_criteria = nn.MSELoss(size_average=False)
+# l1_regularize_criteria = nn.L1Loss(size_average=False)
+# l1_target = Variable([])
 
 # to gpu
 if cuda_available:
     debug_print('Start transferring to CUDA')
     tm_gpu_start = time.time()
     model.cuda()
-    reconstruction_loss.cuda()
+    reconstruction_criteria.cuda()
+    # l1_regularize_criteria.cuda()
+    # l1_target.cuda()
     debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
-
-# for display
-params = model.parameters()
 
 
 def loss_function(recon_x, x, mu=None, logvar=None):
     # thanks to Autograd, you can train the net by just summing-up all losses and propagating them
-    recon_loss = reconstruction_loss(recon_x, x)
+    size_mini_batch = x.data.size()[0]
+    recon_loss = reconstruction_criteria(recon_x, x).div_(size_mini_batch)
     total_loss = recon_loss
     loss_info = {'recon': recon_loss.data[0]}
 
@@ -252,20 +251,15 @@ def loss_function(recon_x, x, mu=None, logvar=None):
         # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
         kld_element = mu.pow(2).add_(logvar.exp()).mul_(-1).add_(1).add_(logvar)
         kld_loss = torch.sum(kld_element).mul_(-0.5)
-        loss_info['variational'] = kld_loss.data[0]
-        total_loss += kld_loss
+        kld_loss_final = kld_loss.div_(size_mini_batch).mul_(options.var_loss_coef)
+        loss_info['variational'] = kld_loss_final.data[0]
+        total_loss += kld_loss_final
 
-    # TODO: check the effect of losses at below
-    if 0.0 != options.l1_coef:
-        l1_loss = options.l1_coef * torch.norm(params, 1)
-        loss_info['l1_reg'] = l1_loss.data[0]
-        # params.data -= options.learning_rate * params.grad.data
-        total_loss += l1_loss
-
-    if 0.0 != options.l2_coef:
-        l2_loss = options.l2_coef * torch.norm(params, 2) ^ 2 / 2
-        loss_info['l2_reg'] = l2_loss.data[0]
-        total_loss += l2_loss
+    # if 0.0 != options.l1_coef:
+    #     l1_loss = options.l1_coef * l1_regularize_criteria(model.parameters(), l1_target)
+    #     loss_info['l1_reg'] = l1_loss.data[0]
+    #     # params.data -= options.learning_rate * params.grad.data
+    #     total_loss += l1_loss
 
     loss_info['total'] = total_loss.data[0]
 
@@ -284,9 +278,10 @@ def save_model(filename):
 print('Start training...')
 model.train()
 
-optimizer = optim.Adam(model.parameters(), lr=options.learning_rate, betas=(options.beta1, 0.999))
-
-total_loss_history = []
+optimizer = optim.Adam(model.parameters(),
+                       lr=options.learning_rate,
+                       weight_decay=options.l2_coef,
+                       betas=(options.beta1, 0.999))
 
 tm_data_load_total = 0
 tm_iter_total = 0
@@ -294,6 +289,7 @@ tm_loop_start = time.time()
 
 # TODO: modify iter_count and epoch range with pretrained model's metadata
 iter_count = 0
+recent_loss = 0
 for epoch in range(options.epochs):
     tm_cur_iter_start = time.time()
     for i, data in enumerate(dataloader, 0):
@@ -315,11 +311,11 @@ for epoch in range(options.epochs):
         tm_train_iter_consume = time.time() - tm_train_start
 
         # logging losses
-        total_loss_history.append(loss.data[0])
+        recent_loss = loss.data[0]
 
         # visualize
         tm_visualize_start = time.time()
-        if options.display:
+        if options.display and 0 == iter_count % options.display_freq:
 
             # visualize input / reconstruction pair
             viz_input_frame = decentering(pick_frame_from_batch(data))
@@ -361,11 +357,11 @@ for epoch in range(options.epochs):
               % (time.time() - tm_loop_start, tm_iter_consume, tm_train_iter_consume, tm_visualize_consume,
                  tm_iter_consume - tm_train_iter_consume - tm_visualize_consume))
 
-    print('====> Epoch %d is ternimated: Total loss is %f' % (epoch+1, total_loss_history[-1]))
+    print('====> Epoch %d is ternimated: Total loss is %f' % (epoch+1, recent_loss))
 
     # checkpoint w.r.t. epoch
     if 0 == (epoch+1) % options.save_freq:
-        save_model('%s_%s_epoch_%03d.pth' % (options.dataset, options.model, epoch))
+        save_model('%s_%s_epoch_%03d.pth' % (options.dataset, options.model, epoch+1))
 
 
 #()()
