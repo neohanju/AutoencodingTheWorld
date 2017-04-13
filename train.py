@@ -61,7 +61,7 @@ parser.add_argument('--display_freq', type=int, default=1, help='display frequen
 # GPU related -----------------------------------------------------------------
 parser.add_argument('--num_gpu', type=int, default=1, help='number of GPUs to use. default=1')
 # network saving related ------------------------------------------------------
-parser.add_argument('--save_freq', type=int, default=10,
+parser.add_argument('--save_freq', type=int, default=100,
                     help='network saving frequency w.r.t. epoch number. default=500')
 parser.add_argument('--save_path', type=str, default='./training_result',
                     help='path to trained network. default=./training_result')
@@ -273,6 +273,10 @@ def save_model(filename):
     print('Model is saved at ' + filename)
 
 
+def print_metadata(filename, train_info):
+    np.save('%s/%s.npy' % (save_path, filename), train_info)
+
+
 # =============================================================================
 # TRAINING
 # =============================================================================
@@ -292,6 +296,13 @@ tm_loop_start = time.time()
 # TODO: modify iter_count and epoch range with pretrained model's metadata
 iter_count = 0
 recent_loss = 0
+train_info = dict(
+    model=options.model,
+    dataset=options.dataset,
+    iter_count=0,
+    total_loss=0,
+    options=options
+)
 for epoch in range(options.epochs):
     tm_cur_iter_start = time.time()
     for i, data in enumerate(dataloader, 0):
@@ -345,12 +356,13 @@ for epoch in range(options.epochs):
 
         tm_visualize_consume = time.time() - tm_visualize_start
 
-        iter_count += 1
-        # # checkpoint w.r.t. iteration number
-        # if 0 == iter_count % options.save_freq:
-        #     save_model('%s_%s_iter_%03d.pth' % (options.dataset, options.model, iter_count))
+        # meta data
+        train_info['iter_count'] = iter_count
+        train_info['total_loss'] = recent_loss
 
-        # TODO: save latest network with metadata containing saved network
+        iter_count += 1
+        save_model('%s_%s_latest.pth' % (options.dataset, options.model))
+        print_metadata('train_info', train_info)
 
         tm_iter_consume = time.time() - tm_cur_iter_start
         tm_cur_iter_start = time.time()  # to measure the time of enumeration of the loop controller, set timer at here
