@@ -11,7 +11,7 @@ import torch.utils.data
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
 from torch.autograd import Variable
-from models import AE, VAE
+from models import AE, VAE, AE_LTR, VAE_LTR
 from data import VideoClipSets
 
 
@@ -27,7 +27,7 @@ def debug_print(arg):
 parser = argparse.ArgumentParser(description='Detecting abnormal behavior in videos')
 
 # model related ---------------------------------------------------------------
-parser.add_argument('--model', type=str, required=True, help='AE | AE_NEW | VAE | VAE_NEW')
+parser.add_argument('--model', type=str, required=True, help='AE | AE_LTR | VAE | VAE_LTR')
 parser.add_argument('--nc', type=int, default=10, help='number of input channel. default=10')
 parser.add_argument('--nz', type=int, default=200, help='size of the latent z vector. default=100')
 parser.add_argument('--nf', type=int, default=64, help='size of lowest image filters. default=64')
@@ -213,16 +213,21 @@ print('Data streaming is ready')
 
 # create model instance
 # TODO: load pretrained model
-if 'AE' == options.model:
-    model = AE(num_in_channels=options.nc, z_size=options.nz, num_filters=options.nf)
+if 'AE_LTR' == options.model:
+    model = AE_LTR(options.nc)
+    reconstruction_loss = nn.MSELoss(size_average=False)
+elif 'VAE_LTR' == options.model:
+    model = AE_LTR(options.nc)
+    reconstruction_loss = nn.MSELoss(size_average=False)
+elif 'AE' == options.model:
+    model = AE(options.nc, options.nz, options.nf)
+    reconstruction_loss = nn.MSELoss(size_average=False)
 elif 'VAE' == options.model:
-    model = VAE(num_in_channels=options.nc, z_size=options.nz, num_filters=options.nf)
-assert model
+    model = VAE(options.nc, options.nz, options.nf)
+    reconstruction_loss = nn.MSELoss(size_average=False)
+assert model, reconstruction_loss
 print(options.model + ' is generated')
 
-# criterion
-reconstruction_loss = nn.MSELoss()
-variational_loss = nn.KLDivLoss()
 
 # to gpu
 if cuda_available:
@@ -230,7 +235,6 @@ if cuda_available:
     tm_gpu_start = time.time()
     model.cuda()
     reconstruction_loss.cuda()
-    variational_loss.cuda()
     debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
 
 # for display
