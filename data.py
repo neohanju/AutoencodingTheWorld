@@ -14,9 +14,12 @@ class VideoClipSets(torch.utils.data.Dataset):
             self.paths = [self.paths]
         self.num_dataset = len(self.paths)
         self.filelist = []
+        self.datanamelist = []
         for path in self.paths:
             assert os.path.exists(path)
-            self.filelist += glob.glob(path + '/*.t7')
+            cur_filelist = glob.glob(path + '/*.t7')
+            self.filelist += cur_filelist
+            self.datanamelist += len(cur_filelist) * [path.split('/')[-2]]
         self.filelist = sorted(self.filelist, key=lambda file: (os.path.dirname(file), os.path.basename(file)))
         self.num_samples = len(self.filelist)
         assert self.num_samples > 0
@@ -25,7 +28,7 @@ class VideoClipSets(torch.utils.data.Dataset):
         return self.num_samples
 
     def __getitem__(self, item):
-        return torch.load(self.filelist[item])
+        return torch.load(self.filelist[item]), self.datanamelist[item]
 
 
 # ()()

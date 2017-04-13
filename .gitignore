@@ -44,4 +44,4 @@ Training.png
 .idea/
 __pycache__/
 
-train.sh
+./train.sh

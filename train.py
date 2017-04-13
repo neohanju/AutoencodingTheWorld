@@ -145,13 +145,14 @@ input_batch = Variable(input_batch)
 recon_batch = Variable(recon_batch)
 debug_print('To Variable for Autograd: %.3f sec elapsed' % (time.time() - tm_to_variable))
 
+viz_target_sample_index = 0
 viz_target_frame_index = int(options.nc / 2)
 
 def reconstruction_error(data, recon_data):
     return gray_single_to_image(np.abs(recon_data-data)*255)
 
 def pick_frame_from_batch(batch_data):
-    return batch_data[0, viz_target_frame_index].cpu().numpy()
+    return batch_data[viz_target_sample_index, viz_target_frame_index].cpu().numpy()
 #test
 
 def gray_single_to_image(image):
@@ -294,7 +295,7 @@ iter_count = 0
 recent_loss = 0
 for epoch in range(options.epochs):
     tm_cur_iter_start = time.time()
-    for i, data in enumerate(dataloader, 0):
+    for i, (data, setnames) in enumerate(dataloader, 0):
 
         # data feed
         batch_size = data.size(0)
@@ -320,10 +321,10 @@ for epoch in range(options.epochs):
         if options.display and 0 == iter_count % options.display_freq:
 
             # visualize input / reconstruction pair
-            viz_input_frame = decentering(pick_frame_from_batch(data))
+            viz_input_frame = decentering(pick_frame_from_batch(data), setnames[viz_target_sample_index])
             viz_input_data = sample_batch_to_image(data)
             viz_recon_data = sample_batch_to_image(recon_batch.data)
-            viz_recon_frame = decentering(pick_frame_from_batch(recon_batch.data))
+            viz_recon_frame = decentering(pick_frame_from_batch(recon_batch.data), setnames[viz_target_sample_index])
             viz_recon_error = reconstruction_error(pick_frame_from_batch(data), pick_frame_from_batch(recon_batch.data))
             if 0 == iter_count:
                 print(viz_input_frame.shape)
