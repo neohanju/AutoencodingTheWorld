@@ -24,7 +24,7 @@ class OurLoss:
         if cuda:
             self.reconstruction_criteria.cuda()
 
-    def get(self, recon_x, x, options, mu=None, logvar=None):
+    def calculate(self, recon_x, x, options, mu=None, logvar=None):
         # thanks to Autograd, you can train the net by just summing-up all losses and propagating them
         size_mini_batch = x.data.size()[0]
         recon_loss = self.reconstruction_criteria(recon_x, x).div_(size_mini_batch)

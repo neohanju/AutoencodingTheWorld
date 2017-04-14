@@ -4,7 +4,6 @@ import random
 import time
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.parallel
 import torch.nn.init
 import torch.utils.data
@@ -223,9 +222,11 @@ for epoch in range(options.epochs):
         tm_train_start = time.time()
         model.zero_grad()
         recon_batch, mu_batch, logvar_batch = model(input_batch)
+
         # backward
-        loss, loss_detail = our_loss.get(recon_x=recon_batch, x=input_batch, mu=mu_batch, logvar=logvar_batch)
+        loss, loss_detail = our_loss.calculate(recon_batch, input_batch, options, mu_batch, logvar_batch)
         loss.backward()
+
         # update
         optimizer.step()
         tm_train_iter_consume = time.time() - tm_train_start

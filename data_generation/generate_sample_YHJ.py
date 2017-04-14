@@ -7,7 +7,7 @@ import torch
 import glob
 
 FFMPEG_BIN = "ffmpeg"
-DATASET_BASE_PATH = '/mnt/fastdataset/Datasets'
+DATASET_BASE_PATH = '/home/mlpa/Workspace/dataset/nips'
 
 number_of_images_in_dataset_all = 0
 
@@ -18,7 +18,7 @@ target_length = 10
 frame_stride = 2
 sample_stride = 5
 
-target_datasets = ['avenue_train','enter_train','exit_train']
+target_datasets = ['avenue_test', 'enter_test', 'exit_test']
 
 datasets = dict(
     mytestvideo=dict(
@@ -42,28 +42,28 @@ datasets = dict(
         name_format='%02d.avi',
         num_videos=21
     ),
-    enter_train = dict(
+    enter_train=dict(
         path=os.path.join(DATASET_BASE_PATH, 'enter'),
         name='enter',
         type='train',
         name_format='%02d.avi',
         num_videos=1
     ),
-    enter_test = dict(
+    enter_test=dict(
         path=os.path.join(DATASET_BASE_PATH, 'enter'),
         name='enter',
         type='test',
         name_format='%02d.avi',
         num_videos=6
     ),
-    exit_train = dict(
+    exit_train=dict(
         path=os.path.join(DATASET_BASE_PATH, 'exit'),
         name='exit',
         type='train',
         name_format='%02d.avi',
         num_videos=1
     ),
-    exit_test = dict(
+    exit_test=dict(
         path=os.path.join(DATASET_BASE_PATH, 'exit'),
         name='exit',
         type='test',
@@ -178,6 +178,7 @@ def generate_samples(preproc_type='centering'):
             # read target images and preprocess them
             sys.stdout.write('\tAt "%s"... [0/%d]' % (datasets[name]['name_format'] % video, num_frames))
             read_pos = 0
+            sample_count_wrt_video = 0
             for start_pos in range(0, num_frames, sample_stride):
                 sys.stdout.write('\r\tAt "%s"... [%d/%d]'
                                  % (datasets[name]['name_format'] % video, start_pos, num_frames))
@@ -211,14 +212,19 @@ def generate_samples(preproc_type='centering'):
                     # insert to sample container
                     sample_data[read_pos-start_pos+j] = image_data
 
+                file_name_format = '%06d.t7'
+                file_name_index = sample_count
+                if datasets[name]['type'] is 'test':
+                    file_name_format = 'video_%02d' % video + '_%06d.t7'
+                    file_name_index = sample_count_wrt_video
                 torch.save(sample_data, os.path.join(datasets[name]['path'], datasets[name]['type'],
-                                                     '%06d.t7' % sample_count))
+                                                     file_name_format % file_name_index))
                 sample_count += 1
+                sample_count_wrt_video += 1
                 read_pos = start_pos + target_length
 
             print('\r\tAt "' + datasets[name]['name_format'] % video + '"... done!')
         print('%d samples are generated.' % sample_count)
-
 
 
 # todo - 저장한 파일의 명세서 저장할 것. 크기, 프레임 등

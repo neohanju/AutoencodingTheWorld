@@ -1,16 +1,13 @@
 import argparse
 import os
+import sys
 import random
 import time
+import glob
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.parallel
-import torch.nn.init
 import torch.utils.data
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
-from data import VideoClipSets
 from models import AE, VAE, AE_LTR, VAE_LTR, OurLoss
 import utils as util
 
@@ -34,13 +31,16 @@ parser.add_argument('--dataset', type=str, required=True,
 parser.add_argument('--data_root', type=str, required=True, help='path to base folder of entire dataset')
 parser.add_argument('--workers', type=int, default=2, help='number of data loading workers')
 # output related --------------------------------------------------------------
-parser.add_argument('--save_path', type=str, required=True, default='./testing_result',
-                    help='path for saving test results')
+parser.add_argument('--save_path', type=str, default='./testing_result', help='path for saving test results')
 # display related -------------------------------------------------------------
 parser.add_argument('--display', action='store_true', default=False,
                     help='visualize things with visdom or not. default=False')
 # GPU related -----------------------------------------------------------------
 parser.add_argument('--num_gpu', type=int, default=1, help='number of GPUs to use. default=1')
+# ETC -------------------------------------------------------------------------
+parser.add_argument('--random_seed', type=int, help='manual seed')
+parser.add_argument('--debug_print', action='store_true', default=False, help='print debug information')
+# -----------------------------------------------------------------------------
 
 options = parser.parse_args()
 
@@ -50,11 +50,13 @@ if options.random_seed is None:
 
 # load options from metadata
 train_info = np.load(os.path.join(os.path.dirname(options.model_path), 'train_info.npy')).item()
-options.model = train_info.model
-options.nc = train_info.options.nc
-options.nz = train_info.options.nz
-options.nf = train_info.options.nf
-options.image_size = train_info.options.image_size
+options.model = train_info['model']
+options.nc = train_info['options'].nc
+options.nz = train_info['options'].nz
+options.nf = train_info['options'].nf
+options.image_size = train_info['options'].image_size
+
+options.variational = options.model.find('VAE') != -1
 
 print(options)
 
@@ -75,22 +77,28 @@ save_path = os.path.join(options.save_path, options.model)
 util.make_dir(save_path)
 
 # visualization
-if options.display:
-    win_recon_cost = None
-
+win_recon_cost = None
+win_images = dict(
+    exist=False,
+    input_frame=None,
+    input_data=None,
+    recon_data=None,
+    recon_frame=None,
+    recon_error=None
+)
 
 # =============================================================================
 # DATA PREPARATION
 # =============================================================================
 dataset_paths, mean_images = util.get_dataset_paths_and_mean_images(options.dataset, options.data_root, 'test')
-dataset = VideoClipSets([options.input_path])
-dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=1, shuffle=False, num_workers=options.workers)
-print('Data loader is ready')
+# dataset = VideoClipSets([options.input_path])
+# dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=1, shuffle=False, num_workers=options.workers)
+# print('Data loader is ready')
 
 # streaming buffer
 tm_buffer_set = time.time()
-input_batch = torch.FloatTensor(options.batch_size, options.nc, options.image_size, options.image_size)
-recon_batch = torch.FloatTensor(options.batch_size, options.nc, options.image_size, options.image_size)
+input_batch = torch.FloatTensor(1, options.nc, options.image_size, options.image_size)
+recon_batch = torch.FloatTensor(1, options.nc, options.image_size, options.image_size)
 debug_print('Stream buffers are set: %.3f sec elapsed' % (time.time() - tm_buffer_set))
 
 if cuda_available:
@@ -146,43 +154,61 @@ if cuda_available:
 # TESTING
 # =============================================================================
 model.eval()
-cur_dataset = None
-cur_save_path = None
 recon_cost_dict = dict(recon=0)
 recon_costs = {}
 sample_index = 0
-for i, (data, setname) in enumerate(dataloader, 0):
 
-    # for multiple datasets
-    if cur_dataset is not setname[0]:
-        cur_dataset = setname[0]
-        recon_costs[cur_dataset] = []
-        win_recon_cost = None
-        print("Testing with '%s' dataset" % cur_dataset)
-    assert cur_dataset is not None and cur_save_path is not None
+print('Start testing...')
+for i, dataset_path in enumerate(dataset_paths, 1):
 
-    # data load
-    input_batch.data.resize_(data.size()).copy_(data)
-    recon_batch.data.resize_(data.size())
+    test_sample_lists = util.sort_file_paths(glob.glob(dataset_path + '/*.t7'))
+    dataset_name = os.path.basename(os.path.dirname(dataset_path))
 
-    # forward
-    tm_forward_start = time.time()
-    recon_batch, mu_batch, logvar_batch = model(input_batch)
-    loss, loss_detail = our_loss.get(recon_x=recon_batch, x=input_batch, mu=mu_batch, logvar=logvar_batch)
-    tm_forward_consume = time.time() - tm_forward_start
+    recon_costs[dataset_name] = {}
+    prev_video = None
 
-    # reconstruction cost
-    recon_costs[cur_dataset].append(loss_detail['recon'])
-    if options.display:
-        recon_cost_dict['recon'] = loss_detail['recon']
-        win_recon_cost = util.viz_append_line_points(win_recon_cost, recon_cost_dict, len(recon_costs[cur_dataset]),
-                                                     'Reconstruction costs of %s' % cur_dataset)
+    sys.stdout.write("\tTesting on '%s'... [%d/%d] " % (dataset_name, i, len(dataset_paths)))
+    for j, sample_path in enumerate(test_sample_lists, 1):
+        sys.stdout.write("\r\tTesting on '%s'... [%d/%d] : %04d / %04d"
+                         % (dataset_name, i, len(dataset_paths), j, len(test_sample_lists)))
 
-# save reconstruciton costs
-for (setname, costs) in recon_costs.items():
-    cur_save_path = os.path.join(save_path, cur_dataset, '_recon_costs')
-    util.make_dir(cur_save_path)
-    util.file_print_recon_costs(os.path.join(cur_save_path, '%s_%s.txt' % (setname, options.model)))
+        cur_video = os.path.basename(sample_path).split('_')[1]  # expect 'video_01_000000.t7' format
+        if prev_video != cur_video:
+            prev_video = cur_video
+            win_recon_cost = None
+
+        # data load
+        data = torch.from_numpy(torch.load(sample_path))
+        input_batch.data.copy_(data)
+
+        # forward
+        tm_forward_start = time.time()
+        recon_batch, mu_batch, logvar_batch = model(input_batch)
+        loss, loss_detail = our_loss.calculate(recon_batch, input_batch, options, mu_batch, logvar_batch)
+        tm_forward_consume = time.time() - tm_forward_start
+
+        # reconstruction cost
+        if cur_video in recon_costs[dataset_name]:
+            recon_costs[dataset_name][cur_video].append(loss_detail['recon'])
+        else:
+            recon_costs[dataset_name][cur_video] = [loss_detail['recon']]
+
+        # visualization
+        if options.display:
+            win_images = util.draw_images(win_images, input_batch, recon_batch.data, [dataset_name])
+            win_recon_cost = util.viz_append_line_points(win_recon_cost, dict(recon=loss_detail['recon'], zero=0),
+                                                         len(recon_costs[dataset_name][cur_video]),
+                                                         'Reconstruction costs of %s' % cur_video)
+
+    print("\r\tTesting on '%s'... [%d/%d] : done" % (dataset_name, i, len(dataset_paths)))
+
+
+# save reconstruction costs
+print('Save cost files')
+for (dataset_name, video_costs) in recon_costs.items():
+    for (video_name, costs) in video_costs.items():
+        util.make_dir(save_path)
+        util.file_print_recon_costs(os.path.join(save_path, '%s_%s.txt' % (dataset_name, video_name)), costs)
 
 
 # ()()

@@ -1,5 +1,7 @@
 import os
 import numpy as np
+import torch
+from torch.autograd import Variable
 from visdom import Visdom
 
 viz = Visdom()
@@ -21,11 +23,20 @@ def make_dir(path):
     return
 
 
+def sort_file_paths(path_list):
+    return sorted(path_list, key=lambda file: (os.path.dirname(file), os.path.basename(file)))
+
+
 # =============================================================================
 # VISUALIZATION
 # =============================================================================
 def pick_frame_from_batch(batch_data, sample_index=target_sample_index, frame_index=target_frame_index):
-    return batch_data[sample_index, frame_index].cpu().numpy()
+    if isinstance(batch_data, Variable):
+        samples = batch_data.data
+    else:
+        samples = batch_data
+    assert isinstance(samples, torch.FloatTensor) or isinstance(samples, torch.cuda.FloatTensor)
+    return samples[sample_index, frame_index].cpu().numpy()
 
 
 def gray_single_to_image(image):
@@ -72,10 +83,17 @@ def draw_images(win_dict, input_batch, recon_batch, setnames):
 
 
 def viz_append_line_points(win, lines_dict, x_pos, title='losses at each iteration'):
-    y_values = np.zeros([1, len(lines_dict.values())])
-    x_values = np.ones([1, len(lines_dict.values())]) * x_pos
-    for i , value in enumerate(lines_dict.values()):
-        y_values[0][i] = value
+    y_len = len(lines_dict.keys())
+    assert y_len > 0
+    if 1 == y_len:
+        dict_values = [val for val in lines_dict.values()]
+        x_values = np.array([x_pos])
+        y_values = np.array([dict_values[0]])
+    else:
+        x_values = np.ones([1, y_len]) * x_pos
+        y_values = np.zeros([1, y_len])
+        for i, value in enumerate(lines_dict.values()):
+            y_values[0][i] = value
 
     if win is None:
         legends = []
