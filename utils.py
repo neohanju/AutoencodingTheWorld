@@ -8,6 +8,22 @@ target_frame_index = 5
 mean_images = {}
 
 
+# =============================================================================
+# SYSTEM
+# =============================================================================
+def make_dir(path):
+    # if there is no directory, make a directory.
+    if not os.path.exists(path):
+        try:
+            os.makedirs(path)
+        except OSError:
+            print('ERROR: Cannot make saving folder')
+    return
+
+
+# =============================================================================
+# VISUALIZATION
+# =============================================================================
 def pick_frame_from_batch(batch_data, sample_index=target_sample_index, frame_index=target_frame_index):
     return batch_data[sample_index, frame_index].cpu().numpy()
 
@@ -55,19 +71,19 @@ def draw_images(win_dict, input_batch, recon_batch, setnames):
     return win_dict
 
 
-def draw_loss_function(win, losses, iter):
-    cur_loss = np.zeros([1, len(losses.values())])
-    x_values = np.ones([1, len(losses.values())]) * iter
-    for i , value in enumerate(losses.values()):
-        cur_loss[0][i] = value
+def viz_append_line_points(win, lines_dict, x_pos, title='losses at each iteration'):
+    y_values = np.zeros([1, len(lines_dict.values())])
+    x_values = np.ones([1, len(lines_dict.values())]) * x_pos
+    for i , value in enumerate(lines_dict.values()):
+        y_values[0][i] = value
 
     if win is None:
         legends = []
-        for key in losses.keys():
+        for key in lines_dict.keys():
             legends.append(key)
-        win = viz.line(X=x_values, Y=cur_loss,
+        win = viz.line(X=x_values, Y=y_values,
             opts=dict(
-                title='losses at each iteration',
+                title=title,
                 xlabel='iterations',
                 ylabel='loss',
                 xtype='linear',
@@ -77,7 +93,7 @@ def draw_loss_function(win, losses, iter):
             )
         )
     else:
-        viz.line(X=x_values, Y=cur_loss, win=win, update='append')
+        viz.line(X=x_values, Y=y_values, win=win, update='append')
 
     return win
 
@@ -93,6 +109,23 @@ def get_loss_string(losses):
     return str_losses
 
 
+# =============================================================================
+# FILE I/O
+# =============================================================================
+def file_print_recon_costs(path, costs):
+    # path : file path
+    # costs : list of reconstruction costs
+    fo = open(path, "w")
+    for cost in costs:
+        assert isinstance(cost, float)
+        fo.write('%.18e\n' % cost)
+    fo.close()
+    return
+
+
+# =============================================================================
+# MISCELLANEOUS
+# =============================================================================
 def get_dataset_paths_and_mean_images(str_dataset, root_path, type):
     str_dataset.replace(' ', '')  # remove white space
     dataset_paths = []

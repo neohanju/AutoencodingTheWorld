@@ -11,7 +11,7 @@ import torch.utils.data
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
 from torch.autograd import Variable
-from models import AE, VAE, AE_LTR, VAE_LTR
+from models import AE, VAE, AE_LTR, VAE_LTR, OurLoss
 from data import VideoClipSets
 import utils as util
 
@@ -168,47 +168,15 @@ elif 'VAE' == options.model:
 assert model
 print(options.model + ' is generated')
 
-# criterions
-reconstruction_criteria = nn.MSELoss(size_average=False)
-# l1_regularize_criteria = nn.L1Loss(size_average=False)
-# l1_target = Variable([])
+# loss & criterions
+our_loss = OurLoss(cuda_available)
 
 # to gpu
 if cuda_available:
-    debug_print('Start transferring to CUDA')
+    debug_print('Start transferring model to CUDA')
     tm_gpu_start = time.time()
     model.cuda()
-    reconstruction_criteria.cuda()
-    # l1_regularize_criteria.cuda()
-    # l1_target.cuda()
     debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
-
-
-def loss_function(recon_x, x, mu=None, logvar=None):
-    # thanks to Autograd, you can train the net by just summing-up all losses and propagating them
-    size_mini_batch = x.data.size()[0]
-    recon_loss = reconstruction_criteria(recon_x, x).div_(size_mini_batch)
-    total_loss = recon_loss
-    loss_info = {'recon': recon_loss.data[0]}
-
-    if options.variational:
-        assert mu is not None and logvar is not None
-        # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
-        kld_element = mu.pow(2).add_(logvar.exp()).mul_(-1).add_(1).add_(logvar)
-        kld_loss = torch.sum(kld_element).mul_(-0.5)
-        kld_loss_final = kld_loss.div_(size_mini_batch).mul_(options.var_loss_coef)
-        loss_info['variational'] = kld_loss_final.data[0]
-        total_loss += kld_loss_final
-
-    # if 0.0 != options.l1_coef:
-    #     l1_loss = options.l1_coef * l1_regularize_criteria(model.parameters(), l1_target)
-    #     loss_info['l1_reg'] = l1_loss.data[0]
-    #     # params.data -= options.learning_rate * params.grad.data
-    #     total_loss += l1_loss
-
-    loss_info['total'] = total_loss.data[0]
-
-    return total_loss, loss_info
 
 
 def save_model(filename):
@@ -248,7 +216,6 @@ for epoch in range(options.epochs):
     for i, (data, setnames) in enumerate(dataloader, 0):
 
         # data feed
-        batch_size = data.size(0)
         input_batch.data.resize_(data.size()).copy_(data)
         recon_batch.data.resize_(data.size())
 
@@ -257,7 +224,7 @@ for epoch in range(options.epochs):
         model.zero_grad()
         recon_batch, mu_batch, logvar_batch = model(input_batch)
         # backward
-        loss, loss_detail = loss_function(recon_x=recon_batch, x=input_batch, mu=mu_batch, logvar=logvar_batch)
+        loss, loss_detail = our_loss.get(recon_x=recon_batch, x=input_batch, mu=mu_batch, logvar=logvar_batch)
         loss.backward()
         # update
         optimizer.step()
@@ -270,7 +237,7 @@ for epoch in range(options.epochs):
         tm_visualize_start = time.time()
         if options.display and 0 == iter_count % options.display_freq:
             win_images = util.draw_images(win_images, data, recon_batch.data, setnames)
-            win_loss = util.draw_loss_function(win_loss, loss_detail, iter_count)
+            win_loss = util.viz_append_line_points(win_loss, loss_detail, iter_count)
         tm_visualize_consume = time.time() - tm_visualize_start
 
         # save network and meta data

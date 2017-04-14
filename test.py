@@ -11,9 +11,8 @@ import torch.utils.data
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
 from data import VideoClipSets
-from models import AE, VAE, AE_LTR, VAE_LTR
+from models import AE, VAE, AE_LTR, VAE_LTR, OurLoss
 import utils as util
-
 
 
 def debug_print(arg):
@@ -33,7 +32,6 @@ parser.add_argument('--model_path', type=str, required=True, help='path to train
 parser.add_argument('--dataset', type=str, required=True,
                     help="all | avenue | ped1 | ped2 | enter | exit. 'all' means using entire data")
 parser.add_argument('--data_root', type=str, required=True, help='path to base folder of entire dataset')
-parser.add_argument('--batch_size', type=int, default=1, help='batch for testing. default=1')
 parser.add_argument('--workers', type=int, default=2, help='number of data loading workers')
 # output related --------------------------------------------------------------
 parser.add_argument('--save_path', type=str, required=True, default='./testing_result',
@@ -64,7 +62,6 @@ print(options)
 # =============================================================================
 # INITIALIZATION PROCESS
 # =============================================================================
-
 cuda_available = torch.cuda.is_available()
 torch.manual_seed(options.random_seed)
 if cuda_available:
@@ -75,20 +72,19 @@ cudnn.benchmark = True
 
 # result saving
 save_path = os.path.join(options.save_path, options.model)
-try:
-    os.makedirs(save_path)
-except OSError:
-    debug_print('WARNING: Cannot make saving folder')
-    pass
+util.make_dir(save_path)
+
+# visualization
+if options.display:
+    win_recon_cost = None
+
 
 # =============================================================================
 # DATA PREPARATION
 # =============================================================================
-
 dataset_paths, mean_images = util.get_dataset_paths_and_mean_images(options.dataset, options.data_root, 'test')
 dataset = VideoClipSets([options.input_path])
-dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=False,
-                                         num_workers=options.workers)
+dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=1, shuffle=False, num_workers=options.workers)
 print('Data loader is ready')
 
 # streaming buffer
@@ -119,11 +115,9 @@ debug_print('Utility library is ready')
 
 
 # =============================================================================
-# MODEL & LOSS FUNCTION
+# MODEL
 # =============================================================================
-
 # create model instance
-# TODO: load pretrained model
 if 'AE_LTR' == options.model:
     model = AE_LTR(options.nc)
 elif 'VAE_LTR' == options.model:
@@ -133,7 +127,63 @@ elif 'AE' == options.model:
 elif 'VAE' == options.model:
     model = VAE(options.nc, options.nz, options.nf)
 assert model
-print(options.model + ' is generated')
+model.load_state_dict(torch.load(options.model_path))
+print(options.model + ' is loaded')
+print(model)
+
+# loss & criterions
+our_loss = OurLoss(cuda_available)
+
+# to gpu
+if cuda_available:
+    debug_print('Start transferring model to CUDA')
+    tm_gpu_start = time.time()
+    model.cuda()
+    debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
+
+
+# =============================================================================
+# TESTING
+# =============================================================================
+model.eval()
+cur_dataset = None
+cur_save_path = None
+recon_cost_dict = dict(recon=0)
+recon_costs = {}
+sample_index = 0
+for i, (data, setname) in enumerate(dataloader, 0):
+
+    # for multiple datasets
+    if cur_dataset is not setname[0]:
+        cur_dataset = setname[0]
+        recon_costs[cur_dataset] = []
+        win_recon_cost = None
+        print("Testing with '%s' dataset" % cur_dataset)
+    assert cur_dataset is not None and cur_save_path is not None
+
+    # data load
+    input_batch.data.resize_(data.size()).copy_(data)
+    recon_batch.data.resize_(data.size())
+
+    # forward
+    tm_forward_start = time.time()
+    recon_batch, mu_batch, logvar_batch = model(input_batch)
+    loss, loss_detail = our_loss.get(recon_x=recon_batch, x=input_batch, mu=mu_batch, logvar=logvar_batch)
+    tm_forward_consume = time.time() - tm_forward_start
+
+    # reconstruction cost
+    recon_costs[cur_dataset].append(loss_detail['recon'])
+    if options.display:
+        recon_cost_dict['recon'] = loss_detail['recon']
+        win_recon_cost = util.viz_append_line_points(win_recon_cost, recon_cost_dict, len(recon_costs[cur_dataset]),
+                                                     'Reconstruction costs of %s' % cur_dataset)
+
+# save reconstruciton costs
+for (setname, costs) in recon_costs.items():
+    cur_save_path = os.path.join(save_path, cur_dataset, '_recon_costs')
+    util.make_dir(cur_save_path)
+    util.file_print_recon_costs(os.path.join(cur_save_path, '%s_%s.txt' % (setname, options.model)))
+
 
 # ()()
 # ('')HAANJU.YOO
