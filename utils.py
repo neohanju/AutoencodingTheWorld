@@ -91,3 +91,20 @@ def get_loss_string(losses):
     if 'l2_reg' in losses:
         str_losses += ' L2: %.4f' % (losses['l2_reg'])
     return str_losses
+
+
+def get_dataset_paths_and_mean_images(str_dataset, root_path, type):
+    str_dataset.replace(' ', '')  # remove white space
+    dataset_paths = []
+    mean_images = {}
+    if 'all' == str_dataset:
+        str_dataset = 'avenue|ped1|ped2|enter|exit'
+    dataset_names = str_dataset.split('|')
+    for name in dataset_names:
+        dataset_paths.append(os.path.join(root_path, name, type))
+        mean_images[name] = np.load(os.path.join(root_path, name, 'mean_image.npy'))
+    return dataset_paths, mean_images
+
+
+# ()()
+# ('') HAANJU.YOO

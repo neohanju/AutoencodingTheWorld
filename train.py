@@ -118,16 +118,7 @@ win_images = dict(
 # =============================================================================
 
 # set data loader
-options.dataset.replace(' ', '')  # remove white space
-dataset_paths = []
-mean_images = {}
-if 'all' == options.dataset:
-    options.dataset = 'avenue|ped1|ped2|enter|exit'
-dataset_names = options.dataset.split('|')
-for name in dataset_names:
-    dataset_paths.append(os.path.join(options.data_root, name, 'train'))
-    mean_images[name] = np.load(os.path.join(options.data_root, name, 'mean_image.npy'))
-
+dataset_paths, mean_images = util.get_dataset_paths_and_mean_images(options.dataset, options.data_root, 'train')
 dataset = VideoClipSets(dataset_paths)
 dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=True,
                                          num_workers=options.workers)
@@ -152,7 +143,6 @@ recon_batch = Variable(recon_batch)
 debug_print('To Variable for Autograd: %.3f sec elapsed' % (time.time() - tm_to_variable))
 
 print('Data streaming is ready')
-
 
 # for utility library
 util.target_sample_index = 0
@@ -226,10 +216,6 @@ def save_model(filename):
     print('Model is saved at ' + filename)
 
 
-def print_metadata(filename, train_info):
-    np.save('%s/%s.npy' % (save_path, filename), train_info)
-
-
 # =============================================================================
 # TRAINING
 # =============================================================================
@@ -287,13 +273,13 @@ for epoch in range(options.epochs):
             win_loss = util.draw_loss_function(win_loss, loss_detail, iter_count)
         tm_visualize_consume = time.time() - tm_visualize_start
 
-        # meta data
+        # save network and meta data
+        save_model('net_latest.pth')
         train_info['iter_count'] = iter_count
         train_info['total_loss'] = recent_loss
+        np.save('%s/%s.npy' % (save_path, 'train_info'), train_info)
 
         iter_count += 1
-        save_model('net_latest.pth')
-        print_metadata('train_info', train_info)
 
         tm_iter_consume = time.time() - tm_cur_iter_start
         tm_cur_iter_start = time.time()  # to measure the time of enumeration of the loop controller, set timer at here
