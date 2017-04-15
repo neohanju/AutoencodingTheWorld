@@ -48,7 +48,7 @@ __pycache__/
 
 # MATLAB
 ######################
-matlab/evaluation/result_graphs/
+matlab_codes/evaluation/result_graphs/*
 
 # ETC
 ######################
