@@ -164,7 +164,7 @@ for i, dataset_path in enumerate(dataset_paths, 1):
     test_sample_lists = util.sort_file_paths(glob.glob(dataset_path + '/*.t7'))
     dataset_name = os.path.basename(os.path.dirname(dataset_path))
 
-    recon_costs[dataset_name] = {}
+    recon_costs = {}
     prev_video = None
 
     sys.stdout.write("\tTesting on '%s'... [%d/%d] " % (dataset_name, i, len(dataset_paths)))
@@ -188,27 +188,27 @@ for i, dataset_path in enumerate(dataset_paths, 1):
         tm_forward_consume = time.time() - tm_forward_start
 
         # reconstruction cost
-        if cur_video in recon_costs[dataset_name]:
-            recon_costs[dataset_name][cur_video].append(loss_detail['recon'])
+        if cur_video in recon_costs:
+            recon_costs[cur_video].append(loss_detail['recon'])
         else:
-            recon_costs[dataset_name][cur_video] = [loss_detail['recon']]
+            recon_costs[cur_video] = [loss_detail['recon']]
 
         # visualization
         if options.display:
             win_images = util.draw_images(win_images, input_batch, recon_batch.data, [dataset_name])
-            win_recon_cost = util.viz_append_line_points(win_recon_cost, dict(recon=loss_detail['recon'], zero=0),
-                                                         len(recon_costs[dataset_name][cur_video]),
-                                                         'Reconstruction costs of %s' % cur_video)
+            win_recon_cost = util.viz_append_line_points(win=win_recon_cost,
+                                                         lines_dict=dict(recon=loss_detail['recon'], zero=0),
+                                                         x_pos=len(recon_costs[cur_video]),
+                                                         title='%s video_%s' % (dataset_name, cur_video),
+                                                         ylabel='reconstruction cost', xlabel='sample index')
 
     print("\r\tTesting on '%s'... [%d/%d] : done" % (dataset_name, i, len(dataset_paths)))
-
-
-# save reconstruction costs
-print('Save cost files')
-for (dataset_name, video_costs) in recon_costs.items():
-    for (video_name, costs) in video_costs.items():
+    print('\tSave cost files...')
+    for (video_name, costs) in recon_costs.items():
         util.make_dir(save_path)
-        util.file_print_recon_costs(os.path.join(save_path, '%s_%s.txt' % (dataset_name, video_name)), costs)
+        util.file_print_recon_costs(
+            os.path.join(save_path, '%s_video_%s_%s.txt' % (dataset_name, video_name, options.model)),
+            costs)
 
 
 # ()()

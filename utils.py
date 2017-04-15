@@ -82,7 +82,7 @@ def draw_images(win_dict, input_batch, recon_batch, setnames):
     return win_dict
 
 
-def viz_append_line_points(win, lines_dict, x_pos, title='losses at each iteration'):
+def viz_append_line_points(win, lines_dict, x_pos, title='losses at each iteration', ylabel='loss', xlabel='iterations'):
     y_len = len(lines_dict.keys())
     assert y_len > 0
     if 1 == y_len:
@@ -102,8 +102,8 @@ def viz_append_line_points(win, lines_dict, x_pos, title='losses at each iterati
         win = viz.line(X=x_values, Y=y_values,
             opts=dict(
                 title=title,
-                xlabel='iterations',
-                ylabel='loss',
+                xlabel=xlabel,
+                ylabel=ylabel,
                 xtype='linear',
                 ytype='linear',
                 legend=legends,
@@ -146,6 +146,7 @@ def file_print_recon_costs(path, costs):
 # =============================================================================
 def get_dataset_paths_and_mean_images(str_dataset, root_path, type):
     str_dataset.replace(' ', '')  # remove white space
+    str_dataset.replace("'", '')  # remove '
     dataset_paths = []
     mean_images = {}
     if 'all' == str_dataset:
