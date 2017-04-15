@@ -41,7 +41,15 @@ Training.png
 
 
 # pycharm
+######################
 .idea/
 __pycache__/
 
-./train.sh
+
+# MATLAB
+######################
+matlab/evaluation/result_graphs/
+
+# ETC
+######################
+train.sh
