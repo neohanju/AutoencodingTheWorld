@@ -118,7 +118,7 @@ win_images = dict(
 
 # set data loader
 dataset_paths, mean_images = util.get_dataset_paths_and_mean_images(options.dataset, options.data_root, 'train')
-dataset = VideoClipSets(dataset_paths)
+dataset = VideoClipSets(dataset_paths, centered=False)
 dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=True,
                                          num_workers=options.workers)
 print('Data loader is ready')
@@ -178,9 +178,10 @@ if cuda_available:
     debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
 
 
-def save_model(filename):
+def save_model(filename, console_print=False):
     torch.save(model.state_dict(), '%s/%s' % (save_path, filename))
-    print('Model is saved at ' + filename)
+    if console_print:
+        print('Model is saved at ' + filename)
 
 
 # =============================================================================
@@ -250,21 +251,25 @@ for epoch in range(options.epochs):
         iter_count += 1
 
         tm_iter_consume = time.time() - tm_cur_iter_start
+        tm_etc_consume = tm_iter_consume - tm_train_iter_consume - tm_visualize_consume
         tm_cur_iter_start = time.time()  # to measure the time of enumeration of the loop controller, set timer at here
 
         # print iteration's summary
-        print('[%02d/%02d][%04d/%04d] Iter:%06d %s'
-              % (epoch+1, options.epochs, i, len(dataloader), iter_count, util.get_loss_string(loss_detail)))
-
-        print('\tTime consume (secs) Total: %.3f CurIter: %.3f, Train: %.3f, Vis.: %.3f ETC: %.3f'
+        print('[%02d/%02d][%04d/%04d] Iter:%06d %s '
+              % (epoch+1, options.epochs, i, len(dataloader), iter_count, util.get_loss_string(loss_detail)) +
+              '[Time] (Total/Cur): %.3f / %.3f, (Train/Vis/ETC): %.3f, %.3f, %.3f (%.3f %%)'
               % (time.time() - tm_loop_start, tm_iter_consume, tm_train_iter_consume, tm_visualize_consume,
-                 tm_iter_consume - tm_train_iter_consume - tm_visualize_consume))
+                 tm_etc_consume, tm_etc_consume / tm_iter_consume))
+
+        # print('\tTime consume (secs) Total: %.3f CurIter: %.3f, Train: %.3f, Vis.: %.3f ETC: %.3f'
+        #       % (time.time() - tm_loop_start, tm_iter_consume, tm_train_iter_consume, tm_visualize_consume,
+        #          tm_iter_consume - tm_train_iter_consume - tm_visualize_consume))
 
     print('====> Epoch %d is ternimated: Total loss is %f' % (epoch+1, recent_loss))
 
     # checkpoint w.r.t. epoch
     if 0 == (epoch+1) % options.save_freq:
-        save_model('%s_%s_epoch_%03d.pth' % (options.dataset, options.model, epoch+1))
+        save_model('%s_%s_epoch_%03d.pth' % (options.dataset, options.model, epoch+1), True)
 
 
 #()()

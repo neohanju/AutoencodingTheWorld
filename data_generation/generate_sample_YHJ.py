@@ -7,7 +7,7 @@ import torch
 import glob
 
 FFMPEG_BIN = "ffmpeg"
-DATASET_BASE_PATH = '/home/mlpa/Workspace/dataset/nips'
+DATASET_BASE_PATH = '/home/neohanju/Workspace/dataset/nips'
 
 number_of_images_in_dataset_all = 0
 
@@ -18,57 +18,68 @@ target_length = 10
 frame_stride = 2
 sample_stride = 5
 
-target_datasets = ['avenue_test', 'enter_test', 'exit_test']
+train_frame_stride = [1, 2, 3]
+train_sample_stride = 2
+
+# target_datasets = ['avenue_train', 'avenue_test',
+#                    'enter_train', 'enter_test',
+#                    'exit_train', 'exit_test']
+target_datasets = ['avenue_train']
 
 datasets = dict(
-    mytestvideo=dict(
-        path=os.path.join(DATASET_BASE_PATH, 'Test_JY'),
-        name='Test_JY',
-        type='train',
-        name_format='%02d.avi',
-        num_videos=1
-    ),
     avenue_train=dict(
         path=os.path.join(DATASET_BASE_PATH, 'avenue'),
         name='avenue',
         type='train',
         name_format='%02d.avi',
-        num_videos=16
+        num_videos=16,
+        frame_stride=train_frame_stride,
+        sample_stride=train_sample_stride
     ),
     avenue_test=dict(
         path=os.path.join(DATASET_BASE_PATH, 'avenue'),
         name='avenue',
         type='test',
         name_format='%02d.avi',
-        num_videos=21
+        num_videos=21,
+        frame_stride=[1],
+        sample_stride=5
     ),
     enter_train=dict(
         path=os.path.join(DATASET_BASE_PATH, 'enter'),
         name='enter',
         type='train',
         name_format='%02d.avi',
-        num_videos=1
+        num_videos=1,
+        frame_stride=train_frame_stride,
+        sample_stride=train_sample_stride
     ),
     enter_test=dict(
         path=os.path.join(DATASET_BASE_PATH, 'enter'),
         name='enter',
         type='test',
         name_format='%02d.avi',
-        num_videos=6
+        num_videos=6,
+        frame_stride=[1],
+        sample_stride=10
     ),
     exit_train=dict(
         path=os.path.join(DATASET_BASE_PATH, 'exit'),
         name='exit',
         type='train',
         name_format='%02d.avi',
-        num_videos=1
+        num_videos=1,
+        frame_stride=train_frame_stride,
+        sample_stride=train_sample_stride
     ),
     exit_test=dict(
         path=os.path.join(DATASET_BASE_PATH, 'exit'),
         name='exit',
         type='test',
         name_format='%02d.avi',
-        num_videos=4
+        num_videos=4,
+        frame_stride=[1],
+        sample_stride=10
     )
 )
 
@@ -153,9 +164,15 @@ def get_mean_image():
 # =============================================================================
 # GENERATE SAMPLES
 # =============================================================================
-def generate_samples(preproc_type='centering'):
+def generate_samples(centering=True):
+
+    if centering:
+        numpy_dtype = np.float32
+    else:
+        numpy_dtype = np.uint8
+
     # sample data container
-    sample_data = np.zeros((target_length, target_rows, target_cols), dtype=np.float)
+    sample_data = np.zeros((target_length, target_rows, target_cols), dtype=numpy_dtype)
     for i, name in enumerate(target_datasets):
         print('Generate samples with "%s" dataset ... [%d/%d]' % (name, i+1, len(target_datasets)))
 
@@ -193,32 +210,27 @@ def generate_samples(preproc_type='centering'):
                 # read and preprocess only unread images
                 reading_images = target_image_paths[read_pos:start_pos+target_length]
                 for j, path in enumerate(reading_images):
-                    image_data = np.array(Image.open(path), dtype=np.float)
+                    image_data = np.array(Image.open(path), dtype=numpy_dtype)
 
                     # preprocessing
-                    if preproc_type is 'centering':
-                        # only subtract a mean image from frame images
+                    if centering:
                         image_data -= mean_image
                         image_data /= 255.0
-                    elif preproc_type is 'thresholding':
-                        # thresholding at difference between mean and frame images
-                        pass
-                    elif preproc_type is 'motion_blob':
-                        # background subtraction with a single Gaussian model algorithm
-                        pass
-                    else:
-                        pass
 
                     # insert to sample container
                     sample_data[read_pos-start_pos+j] = image_data
 
-                file_name_format = '%06d.t7'
+                # different file name format and index among set type
+                file_name_format = '%06d'
                 file_name_index = sample_count
                 if datasets[name]['type'] is 'test':
-                    file_name_format = 'video_%02d' % video + '_%06d.t7'
+                    file_name_format = 'video_%02d' % video + '_%06d'
                     file_name_index = sample_count_wrt_video
-                torch.save(sample_data, os.path.join(datasets[name]['path'], datasets[name]['type'],
-                                                     file_name_format % file_name_index))
+                save_file_path = os.path.join(datasets[name]['path'], datasets[name]['type'],
+                                              file_name_format % file_name_index)
+
+                np.save(save_file_path, sample_data)
+
                 sample_count += 1
                 sample_count_wrt_video += 1
                 read_pos = start_pos + target_length
@@ -231,9 +243,9 @@ def generate_samples(preproc_type='centering'):
 # =============================================================================
 # MAIN PROCEDURE
 # =============================================================================
-extract_video_frames()
-get_mean_image()
-generate_samples()
+# extract_video_frames()
+# get_mean_image()
+generate_samples(centering=False)
 
 # ()()
 # ('')HAANJU.YOO
