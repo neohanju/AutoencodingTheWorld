@@ -1,7 +1,7 @@
 import argparse
 import os
+import time
 import random
-import time as time
 import numpy as np
 import torch
 import torch.nn.parallel

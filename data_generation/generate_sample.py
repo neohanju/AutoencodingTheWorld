@@ -3,11 +3,10 @@ import sys
 import subprocess as sp
 from PIL import Image
 import numpy as np
-import torch
 import glob
 
 FFMPEG_BIN = "ffmpeg"
-DATASET_BASE_PATH = '/mnt/fastdataset/Datasets'
+DATASET_BASE_PATH = '/home/mlpa/Workspace/dataset'
 
 number_of_images_in_dataset_all = 0
 
