@@ -14,15 +14,11 @@ from models import AE, VAE, AE_LTR, VAE_LTR, OurLoss
 from data import VideoClipSets
 import utils as util
 
+
 def debug_print(arg):
     if not options.debug_print:
         return
     print(arg)
-
-
-
-import queue
-from PIL import Image
 
 # =============================================================================
 # OPTIONS
