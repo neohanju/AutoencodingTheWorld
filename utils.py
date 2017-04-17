@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import torch
+import time as time
 from torch.autograd import Variable
 from visdom import Visdom
 
@@ -117,7 +118,7 @@ def viz_append_line_points(win, lines_dict, x_pos, title='losses at each iterati
 
 
 def get_loss_string(losses):
-    str_losses = 'Total: %.4f Recon: %.4f' % (losses['total'], losses['recon'])
+    str_losses = 'Total: %.4f\tRecon: %.4f' % (losses['total'], losses['recon'])
     if 'variational' in losses:
         str_losses += ' Var: %.4f' % (losses['variational'])
     if 'l1_reg' in losses:
@@ -156,6 +157,17 @@ def get_dataset_paths_and_mean_images(str_dataset, root_path, type):
         dataset_paths.append(os.path.join(root_path, name, type))
         mean_images[name] = np.load(os.path.join(root_path, name, 'mean_image.npy'))
     return dataset_paths, mean_images
+
+
+def formatted_time(time_sec):
+    days, rem = divmod(time_sec, 86400) # days
+    hours, rem = divmod(rem, 3600)      # hours
+    minutes, seconds = divmod(rem, 60)  # minutes
+
+    if 0 < days:
+        return '%02d:%d:%.3f' % (int(hours), int(minutes), seconds)
+    else:
+        return '%d-%02d:%d:%.3f' % (int(days), int(hours), int(minutes), seconds)
 
 
 # ()()

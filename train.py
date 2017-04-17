@@ -1,7 +1,7 @@
 import argparse
 import os
 import random
-import time
+import time as time
 import numpy as np
 import torch
 import torch.nn.parallel
@@ -19,6 +19,10 @@ def debug_print(arg):
         return
     print(arg)
 
+
+
+import queue
+from PIL import Image
 
 # =============================================================================
 # OPTIONS
@@ -102,6 +106,7 @@ except OSError:
 
 # visualization
 win_loss = None
+win_time = None
 win_images = dict(
     exist=False,
     input_frame=None,
@@ -166,6 +171,7 @@ elif 'VAE' == options.model:
     model = VAE(options.nc, options.nz, options.nf)
 assert model
 print(options.model + ' is generated')
+print(model)
 
 # loss & criterions
 our_loss = OurLoss(cuda_available)
@@ -212,6 +218,7 @@ train_info = dict(
     options=options
 )
 for epoch in range(options.epochs):
+    tm_cur_epoch_start = time.time()
     tm_cur_iter_start = time.time()
     for i, (data, setnames) in enumerate(dataloader, 0):
 
@@ -254,18 +261,23 @@ for epoch in range(options.epochs):
         tm_etc_consume = tm_iter_consume - tm_train_iter_consume - tm_visualize_consume
         tm_cur_iter_start = time.time()  # to measure the time of enumeration of the loop controller, set timer at here
 
+        time_detail = dict(cur=tm_iter_consume, train=tm_train_iter_consume, visualize=tm_visualize_consume,
+                           ETC=tm_etc_consume)
+
+        if options.display and 0 == iter_count % options.display_freq:
+            win_time = util.viz_append_line_points(win_time, time_detail, iter_count, title='times at each iteration',
+                                                   ylabel='time', xlabel='iterations')
         # print iteration's summary
-        print('[%02d/%02d][%04d/%04d] Iter:%06d %s '
-              % (epoch+1, options.epochs, i, len(dataloader), iter_count, util.get_loss_string(loss_detail)) +
-              '[Time] (Total/Cur): %.3f / %.3f, (Train/Vis/ETC): %.3f, %.3f, %.3f (%.3f %%)'
-              % (time.time() - tm_loop_start, tm_iter_consume, tm_train_iter_consume, tm_visualize_consume,
-                 tm_etc_consume, tm_etc_consume / tm_iter_consume))
+        print('[%02d/%02d][%03d/%03d] Iter:%d\t %s \tTime elapsed: %s'
+              % (epoch+1, options.epochs, i, len(dataloader), iter_count, util.get_loss_string(loss_detail),
+                 util.formatted_time(time.time() - tm_loop_start)))
 
         # print('\tTime consume (secs) Total: %.3f CurIter: %.3f, Train: %.3f, Vis.: %.3f ETC: %.3f'
         #       % (time.time() - tm_loop_start, tm_iter_consume, tm_train_iter_consume, tm_visualize_consume,
         #          tm_iter_consume - tm_train_iter_consume - tm_visualize_consume))
 
-    print('====> Epoch %d is ternimated: Total loss is %f' % (epoch+1, recent_loss))
+    print('====> Epoch %d is ternimated: Epoch time is %s' % (epoch+1,
+                                                              util.formatted_time(time.time() - tm_cur_epoch_start)))
 
     # checkpoint w.r.t. epoch
     if 0 == (epoch+1) % options.save_freq:
