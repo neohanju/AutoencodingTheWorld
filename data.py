@@ -53,9 +53,6 @@ class VideoClipSets(torch.utils.data.Dataset):
             data = torch.ByteTensor(np.load(self.file_paths[item])).float()
             data = data - self.mean_images[self.set_namelist[item]]
             data.div_(255)
-            # loaded_data = torch.ByteTensor(np.load(self.file_list[item])).float()
-            # data = torch.FloatTensor(loaded_data.size())
-            # data.copy_(loaded_data)
         return data, self.set_namelist[item]
 
 

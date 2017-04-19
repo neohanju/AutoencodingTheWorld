@@ -25,13 +25,13 @@ parser = argparse.ArgumentParser(description='Detecting abnormal behavior in vid
 
 # model related ---------------------------------------------------------------
 parser.add_argument('--model_path', type=str, required=True, help='path to trained model file')
-# output related --------------------------------------------------------------
-parser.add_argument('--output_type', type=str, default='recon_costs', help='type of output')
 # data related ----------------------------------------------------------------
 parser.add_argument('--dataset', type=str, required=True,
                     help="all | avenue | ped1 | ped2 | enter | exit. 'all' means using entire data")
 parser.add_argument('--data_root', type=str, required=True, help='path to base folder of entire dataset')
 parser.add_argument('--workers', type=int, default=2, help='number of data loading workers')
+# output related --------------------------------------------------------------
+parser.add_argument('--save_path', type=str, default='./testing_result', help='path for saving test results')
 # display related -------------------------------------------------------------
 parser.add_argument('--display', action='store_true', default=False,
                     help='visualize things with visdom or not. default=False')
@@ -49,22 +49,17 @@ if options.random_seed is None:
     options.random_seed = random.randint(1, 10000)
 
 # load options from metadata
-metadata_path = os.path.join(os.path.dirname(options.model_path),
-                             os.path.basename(options.model_path).split('.')[0] + '_info.json')
-train_info = util.load_dict_from_json_file(metadata_path)
-saved_options = util.dict_to_namespace(train_info['options'])
 # train_info = np.load(os.path.join(os.path.dirname(options.model_path), 'train_info.npy')).item()
-options.model = train_info['model']
-options.nc = saved_options.nc
-options.nz = saved_options.nz
-options.nf = saved_options.nf
-options.image_size = saved_options.image_size
-options.variational = saved_options.variational
-options_dict = util.namespace_to_dict(options)
-print('Options={')
-for k, v in options_dict.items():
-    print('\t' + k + ':', v)
-print('}')
+options.model = 'VAE_LTR'
+options.nc = 10
+options.nz = 200
+options.nf = 64
+options.image_size = 227
+
+options.variational = options.model.find('VAE') != -1
+options.var_loss_coef = 1.0
+
+print(options)
 
 
 # =============================================================================
@@ -75,8 +70,11 @@ torch.manual_seed(options.random_seed)
 if cuda_available:
     torch.cuda.manual_seed_all(options.random_seed)
 
+# cudnn
+cudnn.benchmark = True
+
 # result saving
-save_path = os.path.join(os.path.dirname(options.model_path), options.output_type)
+save_path = os.path.join(options.save_path, options.model)
 util.make_dir(save_path)
 
 # visualization

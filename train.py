@@ -2,21 +2,18 @@ import argparse
 import os
 import time
 import random
+import socket
+import json
 import numpy as np
 import torch
 import torch.nn.parallel
 import torch.nn.init
 import torch.utils.data
-import torch.backends.cudnn as cudnn
 import torch.optim as optim
 from torch.autograd import Variable
 from models import AE, VAE, AE_LTR, VAE_LTR, OurLoss
 from data import VideoClipSets
 import utils as util
-import sys
-sys.stdout.flush()
-
-logfile = open('./training_result/logs/log-' + time.strftime('%Y%m%d-%H%M%S') + '.txt', 'a')
 
 
 def debug_print(arg):
@@ -60,7 +57,7 @@ parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for Adam opt
 # display related -------------------------------------------------------------
 parser.add_argument('--display', action='store_true', default=False,
                     help='visualize things with visdom or not. default=False')
-parser.add_argument('--display_freq', type=int, default=1, help='display frequency w.r.t. iterations. default=5')
+parser.add_argument('--display_freq', type=int, default=100, help='display frequency w.r.t. iterations. default=5')
 # GPU related -----------------------------------------------------------------
 parser.add_argument('--num_gpu', type=int, default=1, help='number of GPUs to use. default=1')
 # network saving related ------------------------------------------------------
@@ -79,30 +76,35 @@ options = parser.parse_args()
 # seed
 if options.random_seed is None:
     options.random_seed = random.randint(1, 10000)
+
+# loss type
 options.variational = options.model.find('VAE') != -1
 
-print(options, file=logfile)
+# print options
+options_dict = util.namespace_to_dict(options)
+print('Options={')
+for k, v in options_dict.items():
+    print('\t' + k + ':', v)
+print('}')
+
 
 
 # =============================================================================
 # INITIALIZATION PROCESS
 # =============================================================================
-
 cuda_available = torch.cuda.is_available()
 
+# seed
 torch.manual_seed(options.random_seed)
 if cuda_available:
     torch.cuda.manual_seed_all(options.random_seed)
 
-cudnn.benchmark = True
-
 # network saving
-save_path = os.path.join(options.save_path, options.model)
-try:
-    os.makedirs(save_path)
-except OSError:
-    debug_print('WARNING: Cannot make saving folder')
-    pass
+model_folder_name = '%s_%s_%s_%s' % (options.model, util.now_to_string(),
+                                     options.dataset.replace('|', '-'), socket.gethostname())
+save_path = os.path.join(options.save_path, model_folder_name)
+util.make_dir(save_path)
+print("All results will be saved at '%s'" % save_path)
 
 # visualization
 win_loss = None
@@ -120,16 +122,19 @@ win_images = dict(
 # =============================================================================
 # DATA PREPARATION
 # =============================================================================
-
 # set data loader
 dataset_paths, mean_images = util.get_dataset_paths_and_mean_images(options.dataset, options.data_root, 'train')
 dataset = VideoClipSets(dataset_paths, centered=False)
+# TODO: find out the way to streaming data directly into GPU
 dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=True,
                                          num_workers=options.workers)
-print('Data loader is ready')
+for path in dataset_paths:
+    print("Dataset from '%s'" % path)
+debug_print('Data loader is ready')
 
 # streaming buffer
 tm_buffer_set = time.time()
+# TODO: change it to pinned memory
 input_batch = torch.FloatTensor(options.batch_size, options.nc, options.image_size, options.image_size)
 recon_batch = torch.FloatTensor(options.batch_size, options.nc, options.image_size, options.image_size)
 debug_print('Stream buffers are set: %.3f sec elapsed' % (time.time() - tm_buffer_set))
@@ -145,8 +150,9 @@ tm_to_variable = time.time()
 input_batch = Variable(input_batch)
 recon_batch = Variable(recon_batch)
 debug_print('To Variable for Autograd: %.3f sec elapsed' % (time.time() - tm_to_variable))
-
-print('Data streaming is ready')
+print('input_batch:', input_batch.size())
+print('recon_batch:', recon_batch.size())
+debug_print('Data streaming is ready')
 
 # for utility library
 util.target_sample_index = 0
@@ -158,7 +164,6 @@ debug_print('Utility library is ready')
 # =============================================================================
 # MODEL & LOSS FUNCTION
 # =============================================================================
-
 # create model instance
 # TODO: load pretrained model
 if 'AE_LTR' == options.model:
@@ -171,9 +176,9 @@ elif 'VAE' == options.model:
     model = VAE(options.nc, options.nz, options.nf)
 assert model
 print(options.model + ' is generated')
-print(model, file=logfile)
+print(model)
 
-# loss & criterions
+# loss & criterion
 our_loss = OurLoss(cuda_available)
 
 # to gpu
@@ -184,12 +189,6 @@ if cuda_available:
     debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
 
 
-def save_model(filename, console_print=False):
-    torch.save(model.state_dict(), '%s/%s' % (save_path, filename))
-    if console_print:
-        print('Model is saved at ' + filename)
-
-
 # =============================================================================
 # TRAINING
 # =============================================================================
@@ -197,6 +196,7 @@ def save_model(filename, console_print=False):
 print('Start training...')
 model.train()
 
+# TODO: add ADAGRAD as an option
 # optimizer
 optimizer = optim.Adam(model.parameters(),
                        lr=options.learning_rate,
@@ -206,29 +206,28 @@ optimizer = optim.Adam(model.parameters(),
 tm_data_load_total = 0
 tm_iter_total = 0
 tm_loop_start = time.time()
+time_info = dict(cur_iter=0, train=0, visualize=0, ETC=0)
 
 # TODO: modify iter_count and epoch range with pretrained model's metadata
 iter_count = 0
 recent_loss = 0
-train_info = dict(
-    model=options.model,
-    dataset=options.dataset,
-    iter_count=0,
-    total_loss=0,
-    options=options
-)
+loss_info = dict()
+train_info = dict(model=options.model, dataset=options.dataset, iter_count=0, total_loss=0, options=options_dict)
+
 for epoch in range(options.epochs):
     loss_per_epoch = []
-    time_per_epoch = [0, 0, 0, 0]
-
-    tm_cur_epoch_start = time.time()
-    tm_cur_iter_start = time.time()
+    tm_cur_epoch_start = tm_cur_iter_start = time.time()
     for i, (data, setnames) in enumerate(dataloader, 0):
 
-        # data feed
+        # ============================================
+        # DATA FEED
+        # ============================================
         input_batch.data.resize_(data.size()).copy_(data)
         recon_batch.data.resize_(data.size())
 
+        # ============================================
+        # TRAIN
+        # ============================================
         # forward
         tm_train_start = time.time()
         model.zero_grad()
@@ -241,69 +240,63 @@ for epoch in range(options.epochs):
         # update
         optimizer.step()
         tm_train_iter_consume = time.time() - tm_train_start
+        time_info['train'] += tm_train_iter_consume
 
         # logging losses
         recent_loss = loss.data[0]
+        loss_info = util.add_dict(loss_info, loss_detail)
 
-        # visualize
+        # ============================================
+        # VISUALIZATION
+        # ============================================
         tm_visualize_start = time.time()
-        if options.display and 0 == iter_count % options.display_freq:
+        if options.display:
+            # draw graph at every drawing period
+            if 0 == iter_count % options.display_freq:  # plot graphs
+                # TODO: wrong value at the starting point
+                loss_info = {key: value / options.display_freq for key, value in loss_info.items()}
+                win_loss = util.viz_append_line_points(win_loss, loss_info, iter_count)
+
+                time_info = {key: value / options.display_freq for key, value in time_info.items()}
+                win_time = util.viz_append_line_points(win_time, time_info, iter_count,
+                                                       title='times at each iteration',
+                                                       ylabel='time', xlabel='iterations')
+                time_info = dict.fromkeys(time_info, 0)
+            # draw input/recon images
             win_images = util.draw_images(win_images, data, recon_batch.data, setnames)
+
+        # print iteration's summary
+        print('[%4d/%4d][%3d/%3d] Iter:%4d\t %s \tTotal time elapsed: %s'
+              % (epoch + 1, options.epochs, i, len(dataloader), iter_count + 1, util.get_loss_string(loss_detail),
+                 util.formatted_time(time.time() - tm_loop_start)))
+
         tm_visualize_consume = time.time() - tm_visualize_start
 
+        # ============================================
+        # NETWORK BACK-UP
+        # ============================================
         # save network and meta data
-        save_model('net_latest.pth')
         train_info['iter_count'] = iter_count
         train_info['total_loss'] = recent_loss
-        np.save('%s/%s.npy' % (save_path, 'train_info'), train_info)
-
-        iter_count += 1
+        train_info['epoch_count'] = epoch
+        util.save_model(os.path.join(save_path, '%s_latest.pth' % options.model), model, train_info)
+        # util.save_dict_as_json_file('%s/%s.json' % (save_path, 'net_latest_info.json'), train_info)
 
         tm_iter_consume = time.time() - tm_cur_iter_start
         tm_etc_consume = tm_iter_consume - tm_train_iter_consume - tm_visualize_consume
+        time_info['cur_iter'] += tm_iter_consume
+        time_info['ETC'] += tm_etc_consume
+        # ===============================================
         tm_cur_iter_start = time.time()  # to measure the time of enumeration of the loop controller, set timer at here
+        iter_count += 1
 
-        # todo : plot per epoch LJY_
-        if not loss_per_epoch:  # list is empty
-            loss_per_epoch = list(loss_detail.values())
-        else:
-            for k in range(0, len(loss_per_epoch)):
-                loss_per_epoch[k] += list(loss_detail.values())[k]
-
-        time_per_epoch[0] += tm_iter_consume
-        time_per_epoch[1] += tm_train_iter_consume
-        time_per_epoch[2] += tm_visualize_consume
-        time_per_epoch[3] += tm_etc_consume
-
-        # print iteration's summary
-        print('[%02d/%02d][%03d/%03d] Iter:%d\t %s \tTime elapsed: %s'
-              % (epoch+1, options.epochs, i, len(dataloader), iter_count, util.get_loss_string(loss_detail),
-                 util.formatted_time(time.time() - tm_loop_start)),file=logfile)
-
-    epoch_size = len(dataloader)
-    loss_per_epoch[:] = [x / epoch_size for x in loss_per_epoch]
-    time_per_epoch[:] = [x / epoch_size for x in time_per_epoch]
-
-    loss_detail_per_epoch = {}
-    for idx, keys in enumerate(loss_detail.keys()):
-
-        loss_detail_per_epoch[keys] = loss_per_epoch[idx]
-
-    time_detail_per_epoch = dict(cur=time_per_epoch[0], train=time_per_epoch[1], visualize=time_per_epoch[2],
-                                 ETC=time_per_epoch[3])
-
-    win_loss = util.viz_append_line_points(win_loss, loss_detail_per_epoch, epoch+1)
-    win_time = util.viz_append_line_points(win_time, time_detail_per_epoch, epoch+1,
-                                           title='times at each iteration', ylabel='time', xlabel='iterations')
-
-    print('====> Epoch %d is ternimated: Epoch time is %s' % (epoch+1,
-                                                              util.formatted_time(time.time() - tm_cur_epoch_start)),file=logfile)
+    print('====> Epoch %d is terminated: Epoch time is %s'
+          % (epoch+1, util.formatted_time(time.time() - tm_cur_epoch_start)))
 
     # checkpoint w.r.t. epoch
     if 0 == (epoch+1) % options.save_freq:
-        save_model('%s_%s_epoch_%03d.pth' % (options.dataset, options.model, epoch+1), True)
+        util.save_model(os.path.join(save_path, '%s_epoch_%03d.pth.pth') % (options.model, epoch+1), model, train_info)
 
 
 #()()
 #('')HAANJU.YOO
-

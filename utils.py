@@ -1,10 +1,13 @@
 import os
 import numpy as np
+import json
 import torch
 from torch.autograd import Variable
 from visdom import Visdom
+from time import gmtime, strftime
 
 viz = Visdom()
+
 target_sample_index = 0
 target_frame_index = 5
 mean_images = {}
@@ -128,6 +131,51 @@ def get_loss_string(losses):
 
 
 # =============================================================================
+# DICTIONARY
+# =============================================================================
+def save_dict_as_json_file(path, in_dict):
+    assert isinstance(in_dict, dict)
+    with open(path, 'w') as outfile:
+        json.dump(in_dict, outfile)
+
+
+def load_dict_from_json_file(path):
+    assert os.path.exists(path)
+    with open(path, 'r') as infile:
+        return json.load(infile)
+
+
+def add_dict(dict1, dict2):
+    # merge two dictionaries with adding values in common key
+    assert isinstance(dict1, dict) and isinstance(dict2, dict)
+    result_dict = dict1.copy()
+    for key2, value2 in dict2.items():
+        key_found = False
+        for key1, value1 in dict1.items():
+            if key1 == key2:
+                key_found = True
+                result_dict[key1] = value1 + value2
+        if not key_found:
+            result_dict[key2] = value2
+    return result_dict
+
+
+def namespace_to_dict(namespace):
+    return vars(namespace)
+
+
+class Bunch(object):
+    def __init__(self, input_dict):
+        self.__dict__.update(input_dict)
+
+
+def dict_to_namespace(input_dict):
+    assert isinstance(input_dict, dict)
+    return Bunch(input_dict)
+
+
+
+# =============================================================================
 # FILE I/O
 # =============================================================================
 def file_print_recon_costs(path, costs):
@@ -139,6 +187,17 @@ def file_print_recon_costs(path, costs):
         fo.write('%.18e\n' % cost)
     fo.close()
     return
+
+
+def save_model(path, model, metadata, console_print=False):
+    assert isinstance(metadata, dict)
+    # save network
+    torch.save(model.state_dict(), path)
+    # save metadata
+    metadata_path = os.path.join(os.path.dirname(path), os.path.basename(path).split('.')[0] + '_info.json')
+    save_dict_as_json_file(metadata_path, metadata)
+    if console_print:
+        print('Model is saved at ' + os.path.basename(path))
 
 
 # =============================================================================
@@ -167,6 +226,11 @@ def formatted_time(time_sec):
         return '%02d:%d:%.3f' % (int(hours), int(minutes), seconds)
     else:
         return '%d-%02d:%d:%.3f' % (int(days), int(hours), int(minutes), seconds)
+
+
+def now_to_string():
+    return strftime("%Y%m%d-%H%M%S", gmtime())
+
 
 
 # ()()
