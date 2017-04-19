@@ -1,7 +1,6 @@
 import os
 import numpy as np
 import torch
-import time as time
 from torch.autograd import Variable
 from visdom import Visdom
 
