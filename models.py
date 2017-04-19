@@ -7,7 +7,7 @@ def weight_init(module):
     # TODO: change to Xavier init : http://wiseodd.github.io/techblog/2017/01/24/vae-pytorch/
     classname = module.__class__.__name__
     if classname.find('Conv') != -1:
-        module.weight.data.normal_(0.0, 0.02)
+        module.weight.data.normal_(0.0, 0.1)
     elif classname.find('BatchNorm') != -1:
         module.weight.data.normal_(1.0, 0.02)
         module.bias.data.fill_(0)
@@ -280,7 +280,6 @@ class VAE(AE):
         mu, logvar = self.encode(x)
         z = self.reparametrize(mu, logvar)
         return self.decode(z), mu, logvar
-
 
 
 #()()

@@ -13,6 +13,10 @@ from torch.autograd import Variable
 from models import AE, VAE, AE_LTR, VAE_LTR, OurLoss
 from data import VideoClipSets
 import utils as util
+import sys
+sys.stdout.flush()
+
+logfile = open('./training_result/logs/log-' + time.strftime('%Y%m%d-%H%M%S') + '.txt', 'a')
 
 
 def debug_print(arg):
@@ -77,7 +81,7 @@ if options.random_seed is None:
     options.random_seed = random.randint(1, 10000)
 options.variational = options.model.find('VAE') != -1
 
-print(options)
+print(options, file=logfile)
 
 
 # =============================================================================
@@ -167,7 +171,7 @@ elif 'VAE' == options.model:
     model = VAE(options.nc, options.nz, options.nf)
 assert model
 print(options.model + ' is generated')
-print(model)
+print(model, file=logfile)
 
 # loss & criterions
 our_loss = OurLoss(cuda_available)
@@ -214,6 +218,9 @@ train_info = dict(
     options=options
 )
 for epoch in range(options.epochs):
+    loss_per_epoch = []
+    time_per_epoch = [0, 0, 0, 0]
+
     tm_cur_epoch_start = time.time()
     tm_cur_iter_start = time.time()
     for i, (data, setnames) in enumerate(dataloader, 0):
@@ -242,7 +249,6 @@ for epoch in range(options.epochs):
         tm_visualize_start = time.time()
         if options.display and 0 == iter_count % options.display_freq:
             win_images = util.draw_images(win_images, data, recon_batch.data, setnames)
-            win_loss = util.viz_append_line_points(win_loss, loss_detail, iter_count)
         tm_visualize_consume = time.time() - tm_visualize_start
 
         # save network and meta data
@@ -257,23 +263,41 @@ for epoch in range(options.epochs):
         tm_etc_consume = tm_iter_consume - tm_train_iter_consume - tm_visualize_consume
         tm_cur_iter_start = time.time()  # to measure the time of enumeration of the loop controller, set timer at here
 
-        time_detail = dict(cur=tm_iter_consume, train=tm_train_iter_consume, visualize=tm_visualize_consume,
-                           ETC=tm_etc_consume)
+        # todo : plot per epoch LJY_
+        if not loss_per_epoch:  # list is empty
+            loss_per_epoch = list(loss_detail.values())
+        else:
+            for k in range(0, len(loss_per_epoch)):
+                loss_per_epoch[k] += list(loss_detail.values())[k]
 
-        if options.display and 0 == iter_count % options.display_freq:
-            win_time = util.viz_append_line_points(win_time, time_detail, iter_count, title='times at each iteration',
-                                                   ylabel='time', xlabel='iterations')
+        time_per_epoch[0] += tm_iter_consume
+        time_per_epoch[1] += tm_train_iter_consume
+        time_per_epoch[2] += tm_visualize_consume
+        time_per_epoch[3] += tm_etc_consume
+
         # print iteration's summary
         print('[%02d/%02d][%03d/%03d] Iter:%d\t %s \tTime elapsed: %s'
               % (epoch+1, options.epochs, i, len(dataloader), iter_count, util.get_loss_string(loss_detail),
-                 util.formatted_time(time.time() - tm_loop_start)))
+                 util.formatted_time(time.time() - tm_loop_start)),file=logfile)
 
-        # print('\tTime consume (secs) Total: %.3f CurIter: %.3f, Train: %.3f, Vis.: %.3f ETC: %.3f'
-        #       % (time.time() - tm_loop_start, tm_iter_consume, tm_train_iter_consume, tm_visualize_consume,
-        #          tm_iter_consume - tm_train_iter_consume - tm_visualize_consume))
+    epoch_size = len(dataloader)
+    loss_per_epoch[:] = [x / epoch_size for x in loss_per_epoch]
+    time_per_epoch[:] = [x / epoch_size for x in time_per_epoch]
+
+    loss_detail_per_epoch = {}
+    for idx, keys in enumerate(loss_detail.keys()):
+
+        loss_detail_per_epoch[keys] = loss_per_epoch[idx]
+
+    time_detail_per_epoch = dict(cur=time_per_epoch[0], train=time_per_epoch[1], visualize=time_per_epoch[2],
+                                 ETC=time_per_epoch[3])
+
+    win_loss = util.viz_append_line_points(win_loss, loss_detail_per_epoch, epoch+1)
+    win_time = util.viz_append_line_points(win_time, time_detail_per_epoch, epoch+1,
+                                           title='times at each iteration', ylabel='time', xlabel='iterations')
 
     print('====> Epoch %d is ternimated: Epoch time is %s' % (epoch+1,
-                                                              util.formatted_time(time.time() - tm_cur_epoch_start)))
+                                                              util.formatted_time(time.time() - tm_cur_epoch_start)),file=logfile)
 
     # checkpoint w.r.t. epoch
     if 0 == (epoch+1) % options.save_freq:
