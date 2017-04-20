@@ -199,8 +199,8 @@ model.train()
 # TODO: add ADAGRAD as an option
 # optimizer
 optimizer = optim.Adagrad(model.parameters(),
-                       lr=options.learning_rate,
-                       weight_decay=options.l2_coef)
+                          lr=options.learning_rate,
+                          weight_decay=options.l2_coef)
 
 tm_data_load_total = 0
 tm_iter_total = 0
