@@ -6,7 +6,7 @@ import numpy as np
 import glob
 
 FFMPEG_BIN = "ffmpeg"
-DATASET_BASE_PATH = '/home/mlpa/Workspace/dataset'
+DATASET_BASE_PATH = '/mnt/fastdataset/Datasets'
 
 number_of_images_in_dataset_all = 0
 
@@ -14,8 +14,8 @@ target_rows = 227
 target_cols = 227
 target_length = 10
 
-frame_stride = 2
-sample_stride = 5
+frame_stride = 1
+sample_stride = 2
 
 train_frame_stride = [1, 2, 3]
 train_sample_stride = 2
@@ -60,7 +60,7 @@ datasets = dict(
         name_format='%02d.avi',
         num_videos=6,
         frame_stride=[1],
-        sample_stride=10
+        sample_stride=5
     ),
     exit_train=dict(
         path=os.path.join(DATASET_BASE_PATH, 'exit'),
@@ -78,7 +78,7 @@ datasets = dict(
         name_format='%02d.avi',
         num_videos=4,
         frame_stride=[1],
-        sample_stride=10
+        sample_stride=5
     )
 )
 
@@ -221,13 +221,13 @@ def generate_samples(centering=True):
                     sample_data[read_pos-start_pos+j] = image_data
 
                 # different file name format and index among set type
-                file_name_format = '%06d'
+                file_name_format = 'fs_%d_stride_%d_%06d'
                 file_name_index = sample_count
                 if datasets[name]['type'] is 'test':
                     file_name_format = 'video_%02d' % video + '_%06d'
                     file_name_index = sample_count_wrt_video
                 save_file_path = os.path.join(datasets[name]['path'], datasets[name]['type'],
-                                              file_name_format % file_name_index)
+                                              file_name_format % (frame_stride,sample_stride,file_name_index))
 
                 np.save(save_file_path, sample_data)
 
@@ -243,9 +243,11 @@ def generate_samples(centering=True):
 # =============================================================================
 # MAIN PROCEDURE
 # =============================================================================
-#extract_video_frames()
-#get_mean_image()
-generate_samples(centering=False)
+extract_video_frames()
+get_mean_image()
+for _frame_stride in train_frame_stride:
+    frame_stride = _frame_stride
+    generate_samples(centering=False)
 
 # ()()
 # ('')HAANJU.YOO
