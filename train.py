@@ -198,10 +198,9 @@ model.train()
 
 # TODO: add ADAGRAD as an option
 # optimizer
-optimizer = optim.Adam(model.parameters(),
+optimizer = optim.Adagrad(model.parameters(),
                        lr=options.learning_rate,
-                       weight_decay=options.l2_coef,
-                       betas=(options.beta1, 0.999))
+                       weight_decay=options.l2_coef)
 
 tm_data_load_total = 0
 tm_iter_total = 0
@@ -213,6 +212,7 @@ iter_count = 0
 recent_loss = 0
 loss_info = dict()
 train_info = dict(model=options.model, dataset=options.dataset, iter_count=0, total_loss=0, options=options_dict)
+display_data_count = 0
 
 for epoch in range(options.epochs):
     loss_per_epoch = []
@@ -249,21 +249,25 @@ for epoch in range(options.epochs):
         # ============================================
         # VISUALIZATION
         # ============================================
+        display_data_count += 1
         tm_visualize_start = time.time()
         if options.display:
+            # draw input/recon images
+            win_images = util.draw_images(win_images, data, recon_batch.data, setnames)
+
             # draw graph at every drawing period
             if 0 == iter_count % options.display_freq:  # plot graphs
                 # TODO: wrong value at the starting point
-                loss_info = {key: value / options.display_freq for key, value in loss_info.items()}
+                loss_info = {key: value / display_data_count for key, value in loss_info.items()}
                 win_loss = util.viz_append_line_points(win_loss, loss_info, iter_count)
+                loss_info = dict.fromkeys(loss_info, 0)
 
-                time_info = {key: value / options.display_freq for key, value in time_info.items()}
+                time_info = {key: value / display_data_count for key, value in time_info.items()}
                 win_time = util.viz_append_line_points(win_time, time_info, iter_count,
                                                        title='times at each iteration',
                                                        ylabel='time', xlabel='iterations')
                 time_info = dict.fromkeys(time_info, 0)
-            # draw input/recon images
-            win_images = util.draw_images(win_images, data, recon_batch.data, setnames)
+                display_data_count = 0
 
         # print iteration's summary
         print('[%4d/%4d][%3d/%3d] Iter:%4d\t %s \tTotal time elapsed: %s'
