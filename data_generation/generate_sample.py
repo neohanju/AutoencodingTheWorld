@@ -20,10 +20,9 @@ test_frame_stride = 1
 train_sample_stride = 2
 test_sample_stride = 5
 
-# target_datasets = ['avenue_train', 'avenue_test',
-#                    'enter_train', 'enter_test',
-#                    'exit_train', 'exit_test']
-target_datasets = ['avenue_train', 'avenue_test']
+target_datasets = ['avenue_train', 'avenue_test',
+                   'enter_train', 'enter_test',
+                   'exit_train', 'exit_test']
 
 datasets = dict(
     avenue_train=dict(
@@ -259,8 +258,8 @@ def generate_samples(centering=False):
 # =============================================================================
 # MAIN PROCEDURE
 # =============================================================================
-# extract_video_frames()
-# get_mean_image()
+extract_video_frames()
+get_mean_image()
 generate_samples()
 
 
