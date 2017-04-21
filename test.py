@@ -44,13 +44,18 @@ parser.add_argument('--debug_print', action='store_true', default=False, help='p
 
 options = parser.parse_args()
 
+
+
+
 # seed
 if options.random_seed is None:
     options.random_seed = random.randint(1, 10000)
 
 # load options from metadata
-metadata_path = os.path.join(os.path.dirname(options.model_path),
-                             os.path.basename(options.model_path).split('.')[0] + '_info.json')
+metadata_path = os.path.join(options.model_path,
+                             options.model_path+'.json')
+
+
 train_info = util.load_dict_from_json_file(metadata_path)
 saved_options = util.dict_to_namespace(train_info['options'])
 # train_info = np.load(os.path.join(os.path.dirname(options.model_path), 'train_info.npy')).item()
@@ -76,7 +81,7 @@ if cuda_available:
     torch.cuda.manual_seed_all(options.random_seed)
 
 # result saving
-save_path = os.path.join(os.path.dirname(options.model_path), options.output_type)
+save_path = os.path.join(options.model_path, options.output_type)
 util.make_dir(save_path)
 
 # visualization
@@ -138,7 +143,8 @@ elif 'AE' == options.model:
 elif 'VAE' == options.model:
     model = VAE(options.nc, options.nz, options.nf)
 assert model
-model.load_state_dict(torch.load(options.model_path))
+model.load_state_dict(torch.load(os.path.join(options.model_path,
+                                              options.model_path, '.pth')))
 print(options.model + ' is loaded')
 print(model)
 
@@ -164,7 +170,7 @@ sample_index = 0
 print('Start testing...')
 for i, dataset_path in enumerate(dataset_paths, 1):
 
-    test_sample_lists = util.sort_file_paths(glob.glob(dataset_path + '/*.t7'))
+    test_sample_lists = util.sort_file_paths(glob.glob(dataset_path + '/*.npy'))
     dataset_name = os.path.basename(os.path.dirname(dataset_path))
 
     recon_costs = {}
@@ -181,7 +187,7 @@ for i, dataset_path in enumerate(dataset_paths, 1):
             win_recon_cost = None
 
         # data load
-        data = torch.from_numpy(torch.load(sample_path))
+        data = torch.from_numpy(np.load(sample_path))
         input_batch.data.copy_(data)
 
         # forward

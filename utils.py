@@ -194,7 +194,7 @@ def save_model(path, model, metadata, console_print=False):
     # save network
     torch.save(model.state_dict(), path)
     # save metadata
-    metadata_path = os.path.join(os.path.dirname(path), os.path.basename(path).split('.')[0] + '_info.json')
+    metadata_path = os.path.join(os.path.dirname(path), path+'.json')
     save_dict_as_json_file(metadata_path, metadata)
     if console_print:
         print('Model is saved at ' + os.path.basename(path))
@@ -209,8 +209,8 @@ def get_dataset_paths_and_mean_images(str_dataset, root_path, type):
     dataset_paths = []
     mean_images = {}
     if 'all' == str_dataset:
-        str_dataset = 'avenue|ped1|ped2|enter|exit'
-    dataset_names = str_dataset.split('|')
+        str_dataset = 'avenue-ped1-ped2-enter-exit'
+    dataset_names = str_dataset.split('-')
     for name in dataset_names:
         dataset_paths.append(os.path.join(root_path, name, type))
         mean_images[name] = np.load(os.path.join(root_path, name, 'mean_image.npy'))

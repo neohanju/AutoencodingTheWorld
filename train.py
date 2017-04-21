@@ -36,7 +36,7 @@ parser.add_argument('--l2_coef', type=float, default=0, help='coef of L2 regular
 parser.add_argument('--var_loss_coef', type=float, default=1.0, help='balancing coef of vairational loss. default=0')
 # training related ------------------------------------------------------------
 parser.add_argument('--batch_size', type=int, default=64, help='input batch size. default=64')
-parser.add_argument('--epochs', type=int, default=5000, help='number of epochs to train for. default=25')
+parser.add_argument('--epochs', type=int, default=10, help='number of epochs to train for. default=25')
 parser.add_argument('--max_iter', type=int, default=150000, help='number of iterations to train for. default=150,000')
 parser.add_argument('--partial_learning', type=float, default=1,
                     help='ratio of partial data for training. At least one sample from each file. default=1')
@@ -102,8 +102,8 @@ if cuda_available:
 # network saving
 model_folder_name = '%s_%s_%s_%s' % (options.model, util.now_to_string(),
                                      options.dataset.replace('|', '-'), socket.gethostname())
-save_path = os.path.join(options.save_path, model_folder_name)
-util.make_dir(save_path)
+#todo save_path and make_dir move to shell script
+save_path = options.save_path
 print("All results will be saved at '%s'" % save_path)
 
 # visualization
@@ -283,8 +283,8 @@ for epoch in range(options.epochs):
         train_info['iter_count'] = iter_count
         train_info['total_loss'] = recent_loss
         train_info['epoch_count'] = epoch
-        util.save_model(os.path.join(save_path, '%s_latest.pth' % options.model), model, train_info)
-        # util.save_dict_as_json_file('%s/%s.json' % (save_path, 'net_latest_info.json'), train_info)
+        util.save_model(os.path.join(save_path, save_path+'.pth'), model, train_info)
+        #util.save_dict_as_json_file('%s/%s.json' % (save_path, 'model_info'), train_info)
 
         tm_iter_consume = time.time() - tm_cur_iter_start
         tm_etc_consume = tm_iter_consume - tm_train_iter_consume - tm_visualize_consume

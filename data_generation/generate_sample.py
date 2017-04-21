@@ -6,7 +6,7 @@ import numpy as np
 import glob
 
 FFMPEG_BIN = "ffmpeg"
-DATASET_BASE_PATH = '/home/mlpa/Workspace/dataset/nips'
+DATASET_BASE_PATH = '/mnt/fastdataset/Datasets'
 
 target_rows = 227
 target_cols = 227
