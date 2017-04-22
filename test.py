@@ -42,6 +42,9 @@ parser.add_argument('--random_seed', type=int, help='manual seed')
 parser.add_argument('--debug_print', action='store_true', default=False, help='print debug information')
 # -----------------------------------------------------------------------------
 
+#todo : tmp
+parser.add_argument('--var_loss_coef', type=float, default=1.0, help='balancing coef of vairational loss. default=0')
+
 options = parser.parse_args()
 
 
