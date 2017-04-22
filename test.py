@@ -53,7 +53,7 @@ if options.random_seed is None:
 
 # load options from metadata
 metadata_path = os.path.join(options.model_path,
-                             options.model_path+'.json')
+                             os.path.basename(options.model_path)+'.json')
 
 
 train_info = util.load_dict_from_json_file(metadata_path)
@@ -144,7 +144,8 @@ elif 'VAE' == options.model:
     model = VAE(options.nc, options.nz, options.nf)
 assert model
 model.load_state_dict(torch.load(os.path.join(options.model_path,
-                                              options.model_path, '.pth')))
+                                    os.path.basename(options.model_path)+'.pth')))
+
 print(options.model + ' is loaded')
 print(model)
 
