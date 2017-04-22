@@ -26,7 +26,7 @@ model=${model_path##*/}
 model_file_name_postfix='_latest.pth'
 
 
-matlab -r "test_evaluate $model_path"
+matlab -nodesktop -r "evaluate $model_path"
 
 echo "=========================="
 echo " Evaluation is done"

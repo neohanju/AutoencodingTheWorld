@@ -6,7 +6,6 @@ import time
 import glob
 import numpy as np
 import torch.utils.data
-import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
 from models import AE, VAE, AE_LTR, VAE_LTR, OurLoss
 import utils as util
@@ -42,35 +41,30 @@ parser.add_argument('--random_seed', type=int, help='manual seed')
 parser.add_argument('--debug_print', action='store_true', default=False, help='print debug information')
 # -----------------------------------------------------------------------------
 
-#todo : tmp
-parser.add_argument('--var_loss_coef', type=float, default=1.0, help='balancing coef of vairational loss. default=0')
-
 options = parser.parse_args()
-
-
-
 
 # seed
 if options.random_seed is None:
     options.random_seed = random.randint(1, 10000)
 
 # load options from metadata
-metadata_path = os.path.join(options.model_path,
-                             os.path.basename(options.model_path)+'.json')
+metadata_path = options.model_path.replace('.pth', '.json')
 
-
+# restore network information from metadata
 train_info = util.load_dict_from_json_file(metadata_path)
 saved_options = util.dict_to_namespace(train_info['options'])
-# train_info = np.load(os.path.join(os.path.dirname(options.model_path), 'train_info.npy')).item()
-options.model = train_info['model']
-options.nc = saved_options.nc
-options.nz = saved_options.nz
-options.nf = saved_options.nf
-options.image_size = saved_options.image_size
-options.variational = saved_options.variational
 options_dict = util.namespace_to_dict(options)
+
+# print test options
 print('Options={')
 for k, v in options_dict.items():
+    print('\t' + k + ':', v)
+print('}')
+
+# print network options
+saved_option_dict = util.namespace_to_dict(saved_options)
+print('Restored options={')
+for k, v in saved_option_dict.items():
     print('\t' + k + ':', v)
 print('}')
 
@@ -84,7 +78,7 @@ if cuda_available:
     torch.cuda.manual_seed_all(options.random_seed)
 
 # result saving
-save_path = os.path.join(options.model_path, options.output_type)
+save_path = os.path.join(os.path.dirname(options.model_path), options.output_type)
 util.make_dir(save_path)
 
 # visualization
@@ -102,14 +96,11 @@ win_images = dict(
 # DATA PREPARATION
 # =============================================================================
 dataset_paths, mean_images = util.get_dataset_paths_and_mean_images(options.dataset, options.data_root, 'test')
-# dataset = VideoClipSets([options.input_path])
-# dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=1, shuffle=False, num_workers=options.workers)
-# print('Data loader is ready')
 
 # streaming buffer
 tm_buffer_set = time.time()
-input_batch = torch.FloatTensor(1, options.nc, options.image_size, options.image_size)
-recon_batch = torch.FloatTensor(1, options.nc, options.image_size, options.image_size)
+input_batch = torch.FloatTensor(1, saved_options.nc, saved_options.image_size, saved_options.image_size)
+recon_batch = torch.FloatTensor(1, saved_options.nc, saved_options.image_size, saved_options.image_size)
 debug_print('Stream buffers are set: %.3f sec elapsed' % (time.time() - tm_buffer_set))
 
 if cuda_available:
@@ -128,7 +119,7 @@ print('Data streaming is ready')
 
 # for utility library
 util.target_sample_index = 0
-util.target_frame_index = int(options.nc / 2)
+util.target_frame_index = int(saved_options.nc / 2)
 util.mean_images = mean_images
 debug_print('Utility library is ready')
 
@@ -137,19 +128,18 @@ debug_print('Utility library is ready')
 # MODEL
 # =============================================================================
 # create model instance
-if 'AE_LTR' == options.model:
-    model = AE_LTR(options.nc)
-elif 'VAE_LTR' == options.model:
-    model = VAE_LTR(options.nc)
-elif 'AE' == options.model:
-    model = AE(options.nc, options.nz, options.nf)
-elif 'VAE' == options.model:
-    model = VAE(options.nc, options.nz, options.nf)
+if 'AE-LTR' == saved_options.model:
+    model = AE_LTR(saved_options.nc)
+elif 'VAE-LTR' == saved_options.model:
+    model = VAE_LTR(saved_options.nc)
+elif 'AE' == saved_options.model:
+    model = AE(saved_options.nc, saved_options.nz, saved_options.nf)
+elif 'VAE' == saved_options.model:
+    model = VAE(saved_options.nc, saved_options.nz, saved_options.nf)
 assert model
-model.load_state_dict(torch.load(os.path.join(options.model_path,
-                                    os.path.basename(options.model_path)+'.pth')))
+model.load_state_dict(torch.load(options.model_path))
 
-print(options.model + ' is loaded')
+print(saved_options.model + ' is loaded')
 print(model)
 
 # loss & criterions
@@ -197,7 +187,7 @@ for i, dataset_path in enumerate(dataset_paths, 1):
         # forward
         tm_forward_start = time.time()
         recon_batch, mu_batch, logvar_batch = model(input_batch)
-        loss, loss_detail = our_loss.calculate(recon_batch, input_batch, options, mu_batch, logvar_batch)
+        loss, loss_detail = our_loss.calculate(recon_batch, input_batch, saved_options, mu_batch, logvar_batch)
         tm_forward_consume = time.time() - tm_forward_start
 
         # reconstruction cost
@@ -218,10 +208,8 @@ for i, dataset_path in enumerate(dataset_paths, 1):
     print("\r\tTesting on '%s'... [%d/%d] : done" % (dataset_name, i, len(dataset_paths)))
     print('\tSave cost files...')
     for (video_name, costs) in recon_costs.items():
-        util.make_dir(save_path)
         util.file_print_recon_costs(
-            os.path.join(save_path, '%s_video_%s_%s.txt' % (dataset_name, video_name, options.model)),
-            costs)
+            os.path.join(save_path, '%s_video_%s_%s.txt' % (dataset_name, video_name, saved_options.model)), costs)
 
 
 # ()()

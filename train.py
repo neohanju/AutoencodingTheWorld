@@ -88,7 +88,6 @@ for k, v in options_dict.items():
 print('}')
 
 
-
 # =============================================================================
 # INITIALIZATION PROCESS
 # =============================================================================
@@ -102,7 +101,6 @@ if cuda_available:
 # network saving
 model_folder_name = '%s_%s_%s_%s' % (options.model, util.now_to_string(),
                                      options.dataset.replace('|', '-'), socket.gethostname())
-#todo save_path and make_dir move to shell script
 save_path = options.save_path
 print("All results will be saved at '%s'" % save_path)
 
@@ -166,9 +164,9 @@ debug_print('Utility library is ready')
 # =============================================================================
 # create model instance
 # TODO: load pretrained model
-if 'AE_LTR' == options.model:
+if 'AE-LTR' == options.model:
     model = AE_LTR(options.nc)
-elif 'VAE_LTR' == options.model:
+elif 'VAE-LTR' == options.model:
     model = VAE_LTR(options.nc)
 elif 'AE' == options.model:
     model = AE(options.nc, options.nz, options.nf)
@@ -256,8 +254,7 @@ for epoch in range(options.epochs):
             win_images = util.draw_images(win_images, data, recon_batch.data, setnames)
 
             # draw graph at every drawing period
-            if 0 == iter_count % options.display_freq:  # plot graphs
-                # TODO: wrong value at the starting point
+            if 0 == iter_count % options.display_freq:
                 loss_info = {key: value / display_data_count for key, value in loss_info.items()}
                 win_loss = util.viz_append_line_points(win_loss, loss_info, iter_count)
                 loss_info = dict.fromkeys(loss_info, 0)
@@ -283,8 +280,7 @@ for epoch in range(options.epochs):
         train_info['iter_count'] = iter_count
         train_info['total_loss'] = recent_loss
         train_info['epoch_count'] = epoch
-        util.save_model(save_path, model, train_info)
-        #util.save_dict_as_json_file('%s/%s.json' % (save_path, 'model_info'), train_info)
+        util.save_model(os.path.join(save_path, options.save_name + '_latest.pth'), model.state_dict(), train_info)
 
         tm_iter_consume = time.time() - tm_cur_iter_start
         tm_etc_consume = tm_iter_consume - tm_train_iter_consume - tm_visualize_consume
@@ -299,7 +295,8 @@ for epoch in range(options.epochs):
 
     # checkpoint w.r.t. epoch
     if 0 == (epoch+1) % options.save_freq:
-        util.save_model(os.path.join(save_path, '%s_epoch_%03d.pth.pth') % (options.model, epoch+1), model, train_info)
+        util.save_model(os.path.join(save_path, '%s_epoch_%03d.pth')
+                        % (options.save_name, epoch+1), model.state_dict(), train_info, True)
 
 
 #()()

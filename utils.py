@@ -174,7 +174,6 @@ def dict_to_namespace(input_dict):
     return Bunch(input_dict)
 
 
-
 # =============================================================================
 # FILE I/O
 # =============================================================================
@@ -189,12 +188,13 @@ def file_print_recon_costs(path, costs):
     return
 
 
-def save_model(path, model, metadata, console_print=False):
+def save_model(path, model_dict, metadata, console_print=False):
     assert isinstance(metadata, dict)
     # save network
-    torch.save(model.state_dict(), os.path.join(path, os.path.basename(path)+'.pth'))
+    net_path = path if path.find('.pth') != -1 else path + '.pth'
+    torch.save(model_dict, net_path)
     # save metadata
-    metadata_path = os.path.join(path, os.path.basename(path)+'.json')
+    metadata_path = net_path.replace('.pth', '.json')
     save_dict_as_json_file(metadata_path, metadata)
     if console_print:
         print('Model is saved at ' + os.path.basename(path))
@@ -209,8 +209,8 @@ def get_dataset_paths_and_mean_images(str_dataset, root_path, type):
     dataset_paths = []
     mean_images = {}
     if 'all' == str_dataset:
-        str_dataset = 'avenue-ped1-ped2-enter-exit'
-    dataset_names = str_dataset.split('-')
+        str_dataset = 'avenue|ped1|ped2|enter|exit'
+    dataset_names = str_dataset.split('|')
     for name in dataset_names:
         dataset_paths.append(os.path.join(root_path, name, type))
         mean_images[name] = np.load(os.path.join(root_path, name, 'mean_image.npy'))

@@ -34,7 +34,7 @@
 
 # enter option
 dataset="avenue|enter|exit"  # avenue | ped1 | ped2 | enter | exit, and also support 'all'
-display=false  # set this when you want to see the result with 'Visdom' package
+display=true  # set this when you want to see the result with 'Visdom' package
 debug_print=false
 
 # model file name postfix can be '_latest.pth' or '_epoch_[NUMBER].pth'
@@ -52,7 +52,7 @@ echo "=========================="
 # check the location of this script
 BASEDIR=$(dirname "$0")
 echo "Script is plased at : $BASEDIR"
-main_dir_relative_path="$BASEDIR/../../"  # MAIN_DIR / training_result / NETWORK_DIR
+main_dir_relative_path="$BASEDIR/../.."  # MAIN_DIR / training_result / NETWORK_DIR
 
 # auto generate options
 if [ $dataset = "all" ]; then
@@ -61,7 +61,7 @@ fi
 OPT_DATA_ROOT=$YCL_DATA_ROOT
 OPT_SAVE_NAME=$model"_"$STARTTIME"_"${dataset//|/-}"_"$HOSTNAME
 OPT_SAVE_PATH="$result_path/$OPT_SAVE_NAME"
-OPT_MODEL_PATH="$PWD/${PWD##*/}$model_file_name_postfix"
+OPT_MODEL_PATH="$BASEDIR/${BASEDIR##*/}$model_file_name_postfix"
 
 # boolean options
 if [ $display = true  ]; then
@@ -76,10 +76,14 @@ else
 fi
 
 OPT_STRING="--model_path $OPT_MODEL_PATH --dataset $dataset --data_root $OPT_DATA_ROOT $OPT_DISPLAY $OPT_DEBUG_PRINT"
-echo "Test option string is : $OPT_STRING"
+# echo "Test option string is : $OPT_STRING"
 
 #run test.py
-python "$main_dir_relative_path/test.py" $OPT_STRING
+CMD_STRING="python $main_dir_relative_path/test.py $OPT_STRING"
+echo
+echo $CMD_STRING
+echo
+$CMD_STRING
 
 echo "=========================="
 echo " Testing is done"
