@@ -6,11 +6,12 @@
 % 2017.04.16, Haanju Yoo, Jeyeol Lee.
 %
 
-function [] = evaluate(cost_base_path_)
+function [] = evaluate(cost_base_path_, model)
     
     % model can be AE_TXT (provided) | AE | VAE | AE_LTR | VAE_LTR or any of
 	% your models.
-	print(pwd)    
+	print(pwd)
+    model='AE-LTR'
 	cost_base_path = cost_base_path_;
     datasets = {'avenue', 'ped1', 'ped2', 'enter', 'exit'};
 	% datasets = {'avenue', 'enter', 'exit'};
@@ -23,15 +24,18 @@ function [] = evaluate(cost_base_path_)
 	% Linux -> MATLAB will crash)
 	do_save_figures = false;
 
-	cost_files_dir = fullfile(cost_base_path, 'recon_costs');
+	if strcmp(model, 'AE_TXT')  % evaluate with provided cost files
+	    cost_files_dir = 'recon_costs';
+	    strides = [5, 5, 5, 10, 10];
+	else
+	    cost_files_dir = fullfile(cost_base_path, 'recon_costs');    
+	end
 	save_path = 'result_graphs';
 
 	fprintf('----------------------------------------\n')
-	fprintf(' EVALUATION\n')
-	fprintf('----------------------------------------\n')
+	fprintf(' EVALUATION with %s\n', model)
+	fprintf('----------------------------------------\n')    
     
-    fid = fopen(fullfile(cost_base_path, '../evaluation.csv'), 'a')
-    fprintf(fid, '%s,,', model)
 	for d = 1:length(datasets)    
 	    dataset = datasets{d};
 	    fprintf('Dataset: %s\n', dataset);
@@ -89,9 +93,7 @@ function [] = evaluate(cost_base_path_)
 	    if isempty(dir(fullfile(cost_files_dir, sprintf('%s_video_test_%s.txt', dataset ,model))))  
 	        fprintf(fullfile(cost_files_dir, sprintf('%s_video_test_%s.txt\n', dataset, model)))
 			fprintf('WARNING: There are no result files\n')
-			fprintf('----------------------------------------\n')
-	        fprintf(fid,',')
-	        fprintf(fid,'-,-,-,-,-')
+			fprintf('----------------------------------------\n')	        
 			continue
         end    
 	
@@ -204,12 +206,7 @@ function [] = evaluate(cost_base_path_)
 	    fprintf('FN: %d\n', fn);
 	    fprintf('Precision: %0.2f\n', tp/(tp+fp));
 	    fprintf('Recall: %0.2f\n', tp/(tp+fn));
-	    fprintf('----------------------------------------\n')
-        fprintf(fid,',')
-        fprintf(fid,'%f,%f,%f,%f,%f',tp,fp,fn,tp/(tp+fp),tp/(tp+fn))
-        
-    end
-    fprintf(fid,'\n')
-    fclose(fid)
+	    fprintf('----------------------------------------\n')        
+    end    
 end
 
