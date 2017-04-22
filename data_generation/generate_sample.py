@@ -6,7 +6,7 @@ import numpy as np
 import glob
 
 FFMPEG_BIN = "ffmpeg"
-DATASET_BASE_PATH = '/mnt/fastdataset/Datasets'
+DATASET_BASE_PATH = os.environ['YCL_DATA_ROOT']
 
 target_rows = 227
 target_cols = 227
@@ -246,7 +246,7 @@ def generate_samples(centering=False):
                     stride_sample_count += 1
                     sample_count_wrt_video += 1
                     read_pos = start_pos + target_length
-                print('\r\tAt "%s" with frame stride %d and sample stride %d is done!'
+                print('\r\tAt "%s" with frame stride %d and sample stride %d is done!          '
                       % (datasets[name]['name_format'] % video, frame_stride, sample_stride))
 
             total_sample_count += stride_sample_count
