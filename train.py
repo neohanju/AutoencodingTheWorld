@@ -283,7 +283,7 @@ for epoch in range(options.epochs):
         train_info['iter_count'] = iter_count
         train_info['total_loss'] = recent_loss
         train_info['epoch_count'] = epoch
-        util.save_model(os.path.join(save_path, os.path.basename(save_path)+'.pth'), model, train_info)
+        util.save_model(save_path, model, train_info)
         #util.save_dict_as_json_file('%s/%s.json' % (save_path, 'model_info'), train_info)
 
         tm_iter_consume = time.time() - tm_cur_iter_start

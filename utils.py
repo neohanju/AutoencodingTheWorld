@@ -192,9 +192,9 @@ def file_print_recon_costs(path, costs):
 def save_model(path, model, metadata, console_print=False):
     assert isinstance(metadata, dict)
     # save network
-    torch.save(model.state_dict(), path)
+    torch.save(model.state_dict(), os.path.join(path, os.path.basename(path)+'.pth'))
     # save metadata
-    metadata_path = os.path.join(os.path.dirname(path), path+'.json')
+    metadata_path = os.path.join(path, os.path.basename(path)+'.json')
     save_dict_as_json_file(metadata_path, metadata)
     if console_print:
         print('Model is saved at ' + os.path.basename(path))
