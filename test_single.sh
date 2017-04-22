@@ -20,7 +20,7 @@ model_path=$PWD
 data_root=$YCL_DATA_ROOT
 
 #run test.py
-#python ../../test.py --model_path $model_path --dataset $dataset --data_root $data_root
+python ../../test.py --model_path $model_path --dataset $dataset --data_root $data_root
 
 echo "test done"
 

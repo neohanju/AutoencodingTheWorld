@@ -44,7 +44,7 @@ fi
 
 
 #run train.py
-#python train.py --model $model --dataset $dataset --data_root $data_root --save_path $save_path --display --debug_print 2>&1 | tee $save_path"/terminal.log"
+python train.py --model $model --dataset $dataset --data_root $data_root --save_path $save_path --display --debug_print 2>&1 | tee $save_path"/terminal.log"
 
 echo "train done"
 
