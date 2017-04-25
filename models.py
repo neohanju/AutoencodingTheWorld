@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.init
+import torch.nn.parallel
 from torch.autograd import Variable
 
 
@@ -9,7 +10,6 @@ def weight_init(module):
     classname = module.__class__.__name__
     if classname.find('Conv') != -1:
         torch.nn.init.xavier_normal(module.weight.data)
-        torch.nn.init.xavier_normal(module.bias.data)
         # module.weight.data.normal_(0.0, 0.01)
     elif classname.find('BatchNorm') != -1:
         module.weight.data.normal_(1.0, 0.02)
@@ -60,6 +60,8 @@ class OurLoss:
 class AE_LTR(nn.Module):  # autoencoder struction from "Learning temporal regularity in video sequences"
     def __init__(self, num_in_channels, num_filters=512, num_gpu=1):
         super().__init__()
+        self.num_gpu = num_gpu
+
         # encoder layers
         self.conv1 = nn.Conv2d(num_in_channels, num_filters, 11, 4)
         self.encode_act1 = nn.Tanh()
@@ -108,6 +110,11 @@ class AE_LTR(nn.Module):  # autoencoder struction from "Learning temporal regula
         return self.decode_act3(self.deconv3(decode2))
 
     def forward(self, x):
+
+        gpu_ids = None
+        if isinstance(x, torch.cuda.FloatTensor) and self.num_gpu > 1:
+            gpu_ids = range(self.num_gpu)
+
         code, index1, size1, index2, size2 = self.encode(x)
         return self.decode(code, index1, size1, index2, size2), code, None
 
