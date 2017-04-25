@@ -125,7 +125,7 @@ dataset_paths, mean_images = util.get_dataset_paths_and_mean_images(options.data
 dataset = VideoClipSets(dataset_paths, centered=False)
 # TODO: find out the way to streaming data directly into GPU
 dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=True,
-                                         num_workers=options.workers)
+                                         num_workers=options.workers, pin_memory=True, drop_last=True)
 for path in dataset_paths:
     print("Dataset from '%s'" % path)
 debug_print('Data loader is ready')

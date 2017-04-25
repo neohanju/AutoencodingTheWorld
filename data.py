@@ -5,7 +5,7 @@ import numpy as np
 
 
 class VideoClipSets(torch.utils.data.Dataset):
-    def __init__(self, paths, centered=True, num_input_channel=10):
+    def __init__(self, paths, centered=False, num_input_channel=10):
         # paths can be a single string ar an array of strings about paths that contain data samples right below
         super().__init__()
 
@@ -19,7 +19,8 @@ class VideoClipSets(torch.utils.data.Dataset):
 
         # get file paths
         self.file_paths = []
-        self.set_namelist = []
+        self.dataset_names = []
+        self.video_names = []
         self.mean_images = {}  # save negative mean images for saving computations
         for path in self.paths:
             assert os.path.exists(path)
@@ -27,15 +28,19 @@ class VideoClipSets(torch.utils.data.Dataset):
             cur_file_paths = glob.glob(path + '/*.npy')
             self.file_paths += cur_file_paths
 
-            # expect '.../[name]/train' format as path
-            cur_set_name = os.path.basename(os.path.dirname(path))
-            self.set_namelist += len(cur_file_paths) * [cur_set_name]
+            cur_dataset_name = ''  # to use in loading mean image
+            for file_path in cur_file_paths:
+                # expect naming format 'avenue_video_01_frame_interval_1_stride_2_000000.npy'
+                name_splits = os.path.basename(file_path).split('_')
+                cur_dataset_name, cur_video_name = name_splits[0], name_splits[2]
+                self.dataset_names += [cur_dataset_name]
+                self.video_names += [cur_video_name]
 
             if not self.centered:
                 # make cube with mean image
                 mean_image = np.load(os.path.join(os.path.dirname(path), 'mean_image.npy'))
                 mean_image_cube = mean_image[np.newaxis, :, :].repeat(num_input_channel, axis=0)
-                self.mean_images[cur_set_name] = torch.FloatTensor(mean_image_cube)
+                self.mean_images[cur_dataset_name] = torch.FloatTensor(mean_image_cube)
 
         self.file_paths = sorted(self.file_paths, key=lambda file: (os.path.dirname(file), os.path.basename(file)))
 
@@ -53,8 +58,7 @@ class VideoClipSets(torch.utils.data.Dataset):
             data = torch.ByteTensor(np.load(self.file_paths[item])).float()
             data = data - self.mean_images[self.set_namelist[item]]
             data.div_(255)
-        return data, self.set_namelist[item]
-
+        return data, self.dataset_names[item], self.video_names[item]
 
 # ()()
 # ('')HAANJU.YOO

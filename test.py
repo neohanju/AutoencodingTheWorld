@@ -8,6 +8,7 @@ import numpy as np
 import torch.utils.data
 from torch.autograd import Variable
 from models import AE, VAE, AE_LTR, VAE_LTR, OurLoss
+from data import VideoClipSets
 import utils as util
 
 
@@ -30,7 +31,6 @@ parser.add_argument('--output_type', type=str, default='recon_costs', help='type
 parser.add_argument('--dataset', type=str, required=True,
                     help="all | avenue | ped1 | ped2 | enter | exit. 'all' means using entire data")
 parser.add_argument('--data_root', type=str, required=True, help='path to base folder of entire dataset')
-parser.add_argument('--workers', type=int, default=2, help='number of data loading workers')
 # display related -------------------------------------------------------------
 parser.add_argument('--display', action='store_true', default=False,
                     help='visualize things with visdom or not. default=False')
@@ -96,6 +96,9 @@ win_images = dict(
 # DATA PREPARATION
 # =============================================================================
 dataset_paths, mean_images = util.get_dataset_paths_and_mean_images(options.dataset, options.data_root, 'test')
+dataset = VideoClipSets(dataset_paths)
+dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=False,
+                                         num_workers=1, pin_memory=True)
 
 # streaming buffer
 tm_buffer_set = time.time()
@@ -162,54 +165,91 @@ recon_costs = {}
 sample_index = 0
 
 print('Start testing...')
-for i, dataset_path in enumerate(dataset_paths, 1):
+tm_test_start= time.time()
 
-    test_sample_lists = util.sort_file_paths(glob.glob(dataset_path + '/*.npy'))
-    dataset_name = os.path.basename(os.path.dirname(dataset_path))
+cost_file_path = ''
+prev_dataset_name = ''
+prev_video_name = ''
+cnt_cost = 0
 
-    recon_costs = {}
-    prev_video = None
 
-    sys.stdout.write("\tTesting on '%s'... [%d/%d] " % (dataset_name, i, len(dataset_paths)))
-    for j, sample_path in enumerate(test_sample_lists, 1):
-        sys.stdout.write("\r\tTesting on '%s'... [%d/%d] : %04d / %04d"
-                         % (dataset_name, i, len(dataset_paths), j, len(test_sample_lists)))
+for i, (data, dataset_name, video_name) in enumerate(dataloader, 0):
+    if prev_dataset_name != dataset_name or prev_video_name != video_name:
+        # new video is started
+        print("Testing on '%s' dataset video '%s'... " % (dataset_name, video_name))
+        cost_file_path = os.path.join(save_path, '%s_video_%s_%s.txt' % (dataset_name, video_name, saved_options.model))
+        util.file_print_recon_costs(cost_file_path, [], overwrite=True)
+        cnt_cost = 0
+        win_recon_cost = None
 
-        cur_video = os.path.basename(sample_path).split('_')[1]  # expect 'video_01_000000.t7' format
-        if prev_video != cur_video:
-            prev_video = cur_video
-            win_recon_cost = None
+    # forward
+    recon_batch, mu_batch, logvar_batch = model(input_batch)
+    loss, loss_detail = our_loss.calculate(recon_batch, input_batch, saved_options, mu_batch, logvar_batch)
 
-        # data load
-        data = torch.from_numpy(np.load(sample_path))
-        input_batch.data.copy_(data)
+    cur_cost = loss_detail['recon']
+    cnt_cost += 1
 
-        # forward
-        tm_forward_start = time.time()
-        recon_batch, mu_batch, logvar_batch = model(input_batch)
-        loss, loss_detail = our_loss.calculate(recon_batch, input_batch, saved_options, mu_batch, logvar_batch)
-        tm_forward_consume = time.time() - tm_forward_start
+    # visualization
+    if options.display:
+        win_images = util.draw_images(win_images, input_batch, recon_batch.data, [dataset_name])
+        win_recon_cost = util.viz_append_line_points(win=win_recon_cost,
+                                                     lines_dict=dict(recon=cur_cost, zero=0),
+                                                     x_pos=cnt_cost,
+                                                     title='%s video_%s' % (dataset_name, video_name),
+                                                     ylabel='reconstruction cost', xlabel='sample index')
 
-        # reconstruction cost
-        if cur_video in recon_costs:
-            recon_costs[cur_video].append(loss_detail['recon'])
-        else:
-            recon_costs[cur_video] = [loss_detail['recon']]
+    # save cost
+    util.file_print_recon_costs(cost_file_path, [cur_cost], overwrite=True)
 
-        # visualization
-        if options.display:
-            win_images = util.draw_images(win_images, input_batch, recon_batch.data, [dataset_name])
-            win_recon_cost = util.viz_append_line_points(win=win_recon_cost,
-                                                         lines_dict=dict(recon=loss_detail['recon'], zero=0),
-                                                         x_pos=len(recon_costs[cur_video]),
-                                                         title='%s video_%s' % (dataset_name, cur_video),
-                                                         ylabel='reconstruction cost', xlabel='sample index')
 
-    print("\r\tTesting on '%s'... [%d/%d] : done" % (dataset_name, i, len(dataset_paths)))
-    print('\tSave cost files...')
-    for (video_name, costs) in recon_costs.items():
-        util.file_print_recon_costs(
-            os.path.join(save_path, '%s_video_%s_%s.txt' % (dataset_name, video_name, saved_options.model)), costs)
+# for i, dataset_path in enumerate(dataset_paths, 1):
+#
+#     test_sample_lists = util.sort_file_paths(glob.glob(dataset_path + '/*.npy'))
+#     dataset_name = os.path.basename(os.path.dirname(dataset_path))
+#
+#     recon_costs = {}
+#     prev_video = None
+#
+#     sys.stdout.write("\tTesting on '%s'... [%d/%d] " % (dataset_name, i, len(dataset_paths)))
+#     for j, sample_path in enumerate(test_sample_lists, 1):
+#         sys.stdout.write("\r\tTesting on '%s'... [%d/%d] : %04d / %04d"
+#                          % (dataset_name, i, len(dataset_paths), j, len(test_sample_lists)))
+#
+#         cur_video = os.path.basename(sample_path).split('_')[1]  # expect 'video_01_000000.t7' format
+#         if prev_video != cur_video:
+#             prev_video = cur_video
+#             win_recon_cost = None
+#
+#         # data load
+#         data = torch.from_numpy(np.load(sample_path))
+#         input_batch.data.copy_(data)
+#
+#         # forward
+#         tm_forward_start = time.time()
+#         recon_batch, mu_batch, logvar_batch = model(input_batch)
+#         loss, loss_detail = our_loss.calculate(recon_batch, input_batch, saved_options, mu_batch, logvar_batch)
+#         tm_forward_consume = time.time() - tm_forward_start
+#
+#         # reconstruction cost
+#         if cur_video in recon_costs:
+#             recon_costs[cur_video].append(loss_detail['recon'])
+#         else:
+#             recon_costs[cur_video] = [loss_detail['recon']]
+#
+#         # visualization
+#         if options.display:
+#             win_images = util.draw_images(win_images, input_batch, recon_batch.data, [dataset_name])
+#             win_recon_cost = util.viz_append_line_points(win=win_recon_cost,
+#                                                          lines_dict=dict(recon=loss_detail['recon'], zero=0),
+#                                                          x_pos=len(recon_costs[cur_video]),
+#                                                          title='%s video_%s' % (dataset_name, cur_video),
+#                                                          ylabel='reconstruction cost', xlabel='sample index')
+#
+#     print("\r\tTesting on '%s'... [%d/%d] : done" % (dataset_name, i, len(dataset_paths)))
+#     print('\tSave cost files...')
+#     for (video_name, costs) in recon_costs.items():
+#         util.file_print_recon_costs(
+#             os.path.join(save_path, '%s_video_%s_%s.txt' % (dataset_name, video_name, saved_options.model)), costs)
 
 
 # ()()

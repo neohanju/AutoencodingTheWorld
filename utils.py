@@ -177,10 +177,11 @@ def dict_to_namespace(input_dict):
 # =============================================================================
 # FILE I/O
 # =============================================================================
-def file_print_recon_costs(path, costs):
+def file_print_recon_costs(path, costs, overwrite=True):
     # path : file path
     # costs : list of reconstruction costs
-    fo = open(path, "w")
+    open_mode = "w" if overwrite else "a"
+    fo = open(path, open_mode)
     for cost in costs:
         assert isinstance(cost, float)
         fo.write('%.18e\n' % cost)

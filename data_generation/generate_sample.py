@@ -271,14 +271,11 @@ def generate_samples(centering=False):
                         sample_data[read_pos-start_pos+j] = image_data
 
                     # different file name format and index among set type
-                    file_name_format = name + '_frame_interval_%d_stride_%d_%06d'
-                    file_name_index = stride_sample_count
-                    if datasets[name]['type'] is 'test':
-                        file_name_format = name + '_video_%02d' % video + '_frame_interval_%d_stride_%d_%06d'
-                        file_name_index = sample_count_wrt_video
+                    file_name_format = '%s_video_%02d' % (datasets[name]['name'], video) \
+                                       + '_frame_interval_%d_stride_%d_%06d'
+                    file_name_index = sample_count_wrt_video
                     save_file_path = os.path.join(datasets[name]['path'], datasets[name]['type'],
                                                   file_name_format % (frame_stride, sample_stride, file_name_index))
-
                     np.save(save_file_path, sample_data)
 
                     stride_sample_count += 1
