@@ -3,11 +3,6 @@ import os
 import time
 import random
 import socket
-import json
-import numpy as np
-import torch
-import torch.nn.parallel
-import torch.nn.init
 import torch.utils.data
 import torch.optim as optim
 from torch.autograd import Variable
@@ -133,16 +128,15 @@ debug_print('Data loader is ready')
 
 # streaming buffer
 tm_buffer_set = time.time()
-# TODO: change it to pinned memory
-input_batch = torch.FloatTensor(options.batch_size, options.nc, options.image_size, options.image_size)
-recon_batch = torch.FloatTensor(options.batch_size, options.nc, options.image_size, options.image_size)
+input_batch = torch.FloatTensor(options.batch_size, options.nc, options.image_size, options.image_size).pin_memory()
+recon_batch = torch.FloatTensor(options.batch_size, options.nc, options.image_size, options.image_size).pin_memory()
 debug_print('Stream buffers are set: %.3f sec elapsed' % (time.time() - tm_buffer_set))
 
 if cuda_available:
     debug_print('Start transferring to CUDA')
     tm_gpu_start = time.time()
-    input_batch = input_batch.cuda()
-    recon_batch = recon_batch.cuda()
+    input_batch = input_batch.cuda(async=True)
+    recon_batch = recon_batch.cuda(async=True)
     debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
 
 tm_to_variable = time.time()
@@ -184,7 +178,13 @@ our_loss = OurLoss(cuda_available)
 if cuda_available:
     debug_print('Start transferring model to CUDA')
     tm_gpu_start = time.time()
-    model.cuda()
+
+    # multi-GPU
+    gpu_ids = None
+    if options.num_gpu > 1:
+        gpu_ids = range(options.num_gpu)
+    model = torch.nn.DataParallel(model, device_ids=gpu_ids)
+
     debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
 
 
@@ -216,13 +216,17 @@ display_data_count = 0
 for epoch in range(options.epochs):
     loss_per_epoch = []
     tm_cur_epoch_start = tm_cur_iter_start = time.time()
-    for i, (data, setname, _) in enumerate(dataloader, 0):
+    for i, (data, setname, _) in enumerate(dataloader, 1):
 
         # ============================================
         # DATA FEED
         # ============================================
-        input_batch.data.resize_(data.size()).copy_(data)
-        recon_batch.data.resize_(data.size())
+        if data.size() != input_batch.data.size():
+            # input_batch.data.resize_(data.size())
+            # recon_batch.data.resize_(data.size())
+            # this will be deprecated by 'last_drop' attributes of dataloader
+            continue
+        input_batch.data.copy_(data)
 
         # ============================================
         # TRAIN
@@ -269,7 +273,7 @@ for epoch in range(options.epochs):
 
         # print iteration's summary
         print('[%4d/%4d][%3d/%3d] Iter:%4d\t %s \tTotal time elapsed: %s'
-              % (epoch + 1, options.epochs, i, len(dataloader), iter_count + 1, util.get_loss_string(loss_detail),
+              % (epoch+1, options.epochs, i, len(dataloader), iter_count+1, util.get_loss_string(loss_detail),
                  util.formatted_time(time.time() - tm_loop_start)))
 
         tm_visualize_consume = time.time() - tm_visualize_start

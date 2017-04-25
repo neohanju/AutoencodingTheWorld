@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.init
-import torch.nn.parallel
 from torch.autograd import Variable
 
 
@@ -58,9 +57,9 @@ class OurLoss:
 # Autoencoder [original]
 # =============================================================================
 class AE_LTR(nn.Module):  # autoencoder struction from "Learning temporal regularity in video sequences"
-    def __init__(self, num_in_channels, num_filters=512, num_gpu=1):
+    def __init__(self, num_in_channels, num_filters=512):
+
         super().__init__()
-        self.num_gpu = num_gpu
 
         # encoder layers
         self.conv1 = nn.Conv2d(num_in_channels, num_filters, 11, 4)
@@ -110,11 +109,6 @@ class AE_LTR(nn.Module):  # autoencoder struction from "Learning temporal regula
         return self.decode_act3(self.deconv3(decode2))
 
     def forward(self, x):
-
-        gpu_ids = None
-        if isinstance(x, torch.cuda.FloatTensor) and self.num_gpu > 1:
-            gpu_ids = range(self.num_gpu)
-
         code, index1, size1, index2, size2 = self.encode(x)
         return self.decode(code, index1, size1, index2, size2), code, None
 
@@ -142,8 +136,10 @@ class AE_LTR(nn.Module):  # autoencoder struction from "Learning temporal regula
 # Variational Autoencoder [original]
 # =============================================================================
 class VAE_LTR(AE_LTR):  # autoencoder struction from "Learning temporal regularity in video sequences"
-    def __init__(self, num_in_channels, num_filters=512, num_gpu=1):
-        super().__init__(num_in_channels, num_filters, num_gpu)
+    def __init__(self, num_in_channels, num_filters=512):
+
+        super().__init__(num_in_channels, num_filters)
+
         # (batch_size) x 128 x 13 x 13
         self.mu = self.conv3
         self.mu_act = self.encode_act3
@@ -184,9 +180,10 @@ class VAE_LTR(AE_LTR):  # autoencoder struction from "Learning temporal regulari
 # Autoencoder [new]
 # =============================================================================
 class AE(nn.Module):
-    def __init__(self, num_in_channels, z_size=200, num_filters=64, num_gpu=1):
+    def __init__(self, num_in_channels, z_size=200, num_filters=64):
+
         super().__init__()
-        self.num_gpu = num_gpu
+
         self.encoder = nn.Sequential(
             # expected input: (L) x 227 x 227
             nn.Conv2d(num_in_channels, num_filters, 5, 2, 1),
@@ -261,9 +258,9 @@ class AE(nn.Module):
 # Variational Autoencoder [default]
 # =============================================================================
 class VAE(AE):
-    def __init__(self, num_in_channels, z_size, num_filters):
-        super().__init__(num_in_channels, z_size, num_filters)
-        self.mu = self.z                                  # Mean μ of Z
+    def __init__(self, num_in_channels, z_size, num_filters, num_gpu=1):
+        super().__init__(num_in_channels, z_size, num_filters, num_gpu)
+        self.mu = self.z                                     # Mean μ of Z
         self.logvar = nn.Conv2d(8 * num_filters, z_size, 6)  # Log variance σ^2 of Z (diagonal covariance)
 
         # init weights
