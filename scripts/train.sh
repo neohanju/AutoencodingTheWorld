@@ -26,15 +26,18 @@
 
 
 # enter option
-model="AE-LTR"
-dataset="avenue|enter|exit"  # avenue | ped1 | ped2 | enter | exit, and also support 'all'
-epochs="1"
+model="VAE"
+dataset="avenue|ped1|ped2|enter|exit"  # avenue | ped1 | ped2 | enter | exit, and also support 'all'
+epochs="20"
+num_gpu="8"
 
-display=false
+display=true
 debug_print=false
 
+display_freq="25"
+
 # enter processing type
-do_test=true
+do_test=false
 do_evaluate=false
 
 echo "=========================="
@@ -76,7 +79,7 @@ fi
 
 # boolean options
 if [ $display = true  ]; then
-	OPT_DISPLAY="--display"
+	OPT_DISPLAY="--display --display_freq $display_freq"
 else
 	OPT_DISPLAY=""
 fi
@@ -87,7 +90,7 @@ else
 fi
 
 # options
-OPT_STRING="--model $model --dataset $dataset --data_root $OPT_DATA_ROOT --save_path $OPT_SAVE_PATH --save_name $OPT_SAVE_NAME --epochs $epochs $OPT_DISPLAY $OPT_DEBUG_PRINT"
+OPT_STRING="--model $model --dataset $dataset --data_root $OPT_DATA_ROOT --save_path $OPT_SAVE_PATH --save_name $OPT_SAVE_NAME --epochs $epochs $OPT_DISPLAY $OPT_DEBUG_PRINT --num_gpu $num_gpu"
 
 #run train.py
 CMD_STRING="python $main_dir_relative_path/train.py $OPT_STRING"

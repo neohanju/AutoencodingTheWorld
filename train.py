@@ -75,6 +75,11 @@ if options.random_seed is None:
 # loss type
 options.variational = options.model.find('VAE') != -1
 
+# gpu number
+if options.num_gpu > torch.cuda.device_count():
+    print('Unfortunately, there are not enough # of GPUs as many as you want')
+    options.num_gpu = torch.cuda.device_count()
+
 # print options
 options_dict = util.namespace_to_dict(options)
 print('Options={')
