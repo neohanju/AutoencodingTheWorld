@@ -258,8 +258,10 @@ class AE(nn.Module):
 # Variational Autoencoder [default]
 # =============================================================================
 class VAE(AE):
-    def __init__(self, num_in_channels, z_size, num_filters, num_gpu=1):
-        super().__init__(num_in_channels, z_size, num_filters, num_gpu)
+    def __init__(self, num_in_channels, z_size, num_filters):
+
+        super().__init__(num_in_channels, z_size, num_filters)
+
         self.mu = self.z                                     # Mean μ of Z
         self.logvar = nn.Conv2d(8 * num_filters, z_size, 6)  # Log variance σ^2 of Z (diagonal covariance)
 
