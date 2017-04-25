@@ -22,7 +22,9 @@ test_sample_stride = 5
 
 target_datasets = ['avenue_train', 'avenue_test',
                    'enter_train', 'enter_test',
-                   'exit_train', 'exit_test']
+                   'exit_train', 'exit_test',
+                   'ped1_train', 'ped1_test',
+                   'ped2_train', 'ped2_test']
 
 datasets = dict(
     avenue_train=dict(
@@ -78,7 +80,43 @@ datasets = dict(
         num_videos=4,
         frame_stride=test_frame_stride,
         sample_stride=test_sample_stride
-    )
+    ),
+    ped1_train=dict(
+        path=os.path.join(DATASET_BASE_PATH, 'ped1'),
+        name='ped1',
+        type='train',
+        name_format='%02d.avi',
+        num_videos=34,
+        frame_stride=train_frame_strides,
+        sample_stride=train_sample_stride
+    ),
+    ped1_test=dict(
+        path=os.path.join(DATASET_BASE_PATH, 'ped1'),
+        name='ped1',
+        type='test',
+        name_format='%02d.avi',
+        num_videos=36,
+        frame_stride=test_frame_stride,
+        sample_stride=test_sample_stride
+    ),
+    ped2_train=dict(
+        path=os.path.join(DATASET_BASE_PATH, 'ped2'),
+        name='ped2',
+        type='train',
+        name_format='%02d.avi',
+        num_videos=16,
+        frame_stride=train_frame_strides,
+        sample_stride=train_sample_stride
+    ),
+    ped2_test=dict(
+        path=os.path.join(DATASET_BASE_PATH, 'ped2'),
+        name='ped2',
+        type='test',
+        name_format='%02d.avi',
+        num_videos=12,
+        frame_stride=test_frame_stride,
+        sample_stride=test_sample_stride
+    ),
 )
 
 
