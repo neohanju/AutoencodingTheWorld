@@ -219,14 +219,14 @@ def get_dataset_paths_and_mean_images(str_dataset, root_path, type):
 
 
 def formatted_time(time_sec):
-    days, rem = divmod(time_sec, 86400) # days
-    hours, rem = divmod(rem, 3600)      # hours
-    minutes, seconds = divmod(rem, 60)  # minutes
+    days, rem = divmod(time_sec, 86400)  # days
+    hours, rem = divmod(rem, 3600)       # hours
+    minutes, seconds = divmod(rem, 60)   # minutes
 
     if 0 < days:
-        return '%02d:%d:%.3f' % (int(hours), int(minutes), seconds)
+        return '%02d:%02d:%06.3f' % (int(hours), int(minutes), seconds)
     else:
-        return '%d-%02d:%d:%.3f' % (int(days), int(hours), int(minutes), seconds)
+        return '%d-%02d:%02d:%06.3f' % (int(days), int(hours), int(minutes), seconds)
 
 
 def now_to_string():
