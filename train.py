@@ -102,6 +102,7 @@ if cuda_available:
 model_folder_name = '%s_%s_%s_%s' % (options.model, util.now_to_string(),
                                      options.dataset.replace('|', '-'), socket.gethostname())
 save_path = options.save_path
+util.make_dir(save_path)
 print("All results will be saved at '%s'" % save_path)
 
 # visualization
@@ -125,7 +126,7 @@ dataset_paths, mean_images = util.get_dataset_paths_and_mean_images(options.data
 dataset = VideoClipSets(dataset_paths, centered=False)
 # TODO: find out the way to streaming data directly into GPU
 dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=True,
-                                         num_workers=options.workers, pin_memory=True, drop_last=True)
+                                         num_workers=options.workers, pin_memory=True)
 for path in dataset_paths:
     print("Dataset from '%s'" % path)
 debug_print('Data loader is ready')
@@ -215,7 +216,7 @@ display_data_count = 0
 for epoch in range(options.epochs):
     loss_per_epoch = []
     tm_cur_epoch_start = tm_cur_iter_start = time.time()
-    for i, (data, setnames) in enumerate(dataloader, 0):
+    for i, (data, setname, _) in enumerate(dataloader, 0):
 
         # ============================================
         # DATA FEED
@@ -251,7 +252,7 @@ for epoch in range(options.epochs):
         tm_visualize_start = time.time()
         if options.display:
             # draw input/recon images
-            win_images = util.draw_images(win_images, data, recon_batch.data, setnames)
+            win_images = util.draw_images(win_images, data, recon_batch.data, setname)
 
             # draw graph at every drawing period
             if 0 == iter_count % options.display_freq:
