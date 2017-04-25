@@ -1,13 +1,16 @@
 import torch
 import torch.nn as nn
+import torch.nn.init
 from torch.autograd import Variable
 
-# weight initialization function from DCGAN example. (resemble with Xavier's)
+
+# xavier_init
 def weight_init(module):
-    # TODO: change to Xavier init : http://wiseodd.github.io/techblog/2017/01/24/vae-pytorch/
     classname = module.__class__.__name__
     if classname.find('Conv') != -1:
-        module.weight.data.normal_(0.0, 0.01)
+        torch.nn.init.xavier_normal(module.weight.data)
+        torch.nn.init.xavier_normal(module.bias.data)
+        # module.weight.data.normal_(0.0, 0.01)
     elif classname.find('BatchNorm') != -1:
         module.weight.data.normal_(1.0, 0.02)
         module.bias.data.fill_(0)
