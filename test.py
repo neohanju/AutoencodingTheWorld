@@ -104,6 +104,8 @@ dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.bat
 tm_buffer_set = time.time()
 input_batch = torch.FloatTensor(1, saved_options.nc, saved_options.image_size, saved_options.image_size)
 recon_batch = torch.FloatTensor(1, saved_options.nc, saved_options.image_size, saved_options.image_size)
+mu_batch = torch.FloatTensor(options.batch_size, options.nz[0], options.nz[1], options.nz[2])
+logvar_batch = torch.FloatTensor(options.batch_size, options.nz[0], options.nz[1], options.nz[2])
 debug_print('Stream buffers are set: %.3f sec elapsed' % (time.time() - tm_buffer_set))
 
 if cuda_available:
@@ -111,6 +113,8 @@ if cuda_available:
     tm_gpu_start = time.time()
     input_batch = input_batch.cuda()
     recon_batch = recon_batch.cuda()
+    mu_batch = mu_batch.cuda()
+    logvar_batch = logvar_batch.cuda()
     debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
 
 tm_to_variable = time.time()
@@ -136,9 +140,9 @@ if 'AE-LTR' == saved_options.model:
 elif 'VAE-LTR' == saved_options.model:
     model = VAE_LTR(saved_options.nc)
 elif 'AE' == saved_options.model:
-    model = AE(saved_options.nc, saved_options.nz, saved_options.nf)
+    model = AE(saved_options.nc, saved_options.nz[0], saved_options.nf)
 elif 'VAE' == saved_options.model:
-    model = VAE(saved_options.nc, saved_options.nz, saved_options.nf)
+    model = VAE(saved_options.nc, saved_options.nz[0], saved_options.nf)
 assert model
 model.load_state_dict(torch.load(options.model_path))
 

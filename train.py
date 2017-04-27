@@ -54,7 +54,10 @@ parser.add_argument('--display', action='store_true', default=False,
                     help='visualize things with visdom or not. default=False')
 parser.add_argument('--display_freq', type=int, default=100, help='display frequency w.r.t. iterations. default=5')
 # GPU related -----------------------------------------------------------------
-parser.add_argument('--num_gpu', type=int, default=1, help='number of GPUs to use. default=1')
+parser.add_argument('--num_gpu', type=int, default=0,
+                    help='number of GPUs to use. It will be ignored when gpu_ids options is given. default=0')
+parser.add_argument('--gpu_ids', type=list, default=[],
+                    help='Indices of GPUs in use. If you give this, num_gpu option input will be ignored. default=[]')
 # network saving related ------------------------------------------------------
 parser.add_argument('--save_freq', type=int, default=100,
                     help='network saving frequency w.r.t. epoch number. default=500')
@@ -75,10 +78,35 @@ if options.random_seed is None:
 # loss type
 options.variational = options.model.find('VAE') != -1
 
+# latent space size
+if options.model.find('_LTR') != -1:
+    options.nz = [128, 13, 13]
+else:
+    options.nz = [options.nz, 1, 1]
+
 # gpu number
-if options.num_gpu > torch.cuda.device_count():
-    print('Unfortunately, there are not enough # of GPUs as many as you want')
-    options.num_gpu = torch.cuda.device_count()
+if 0 == len(options.gpu_ids):
+    if 0 < options.num_gpu <= torch.cuda.device_count():
+        # auto generate GPU indices
+        pass
+    else:
+        options.num_gpu = torch.cuda.device_count()
+        if options.num_gpu > torch.cuda.device_count():
+            print('[WARNING] Unfortunately, there are not enough # of GPUs as many as you want. Only %d is available.'
+                  % options.num_gpu)
+    options.gpu_ids = list(range(options.num_gpu))
+else:
+    # remove redundant, or too small, or too big indices
+    candidate_ids = list(set(options.gpu_ids))
+    options.gpu_ids = []
+    for idx in candidate_ids:
+        if idx >= options.num_gpu:
+            print("[WARNING] To large index for you GPU setting. discard '%d'" % idx)
+        elif idx < 0:
+            print("[WARNING] Negative index. discard '%d'" % idx)
+        else:
+            options.gpu_ids.append(idx)
+    options.num_gpu = len(options.gpu_ids)
 
 # print options
 options_dict = util.namespace_to_dict(options)
@@ -135,6 +163,8 @@ debug_print('Data loader is ready')
 tm_buffer_set = time.time()
 input_batch = torch.FloatTensor(options.batch_size, options.nc, options.image_size, options.image_size).pin_memory()
 recon_batch = torch.FloatTensor(options.batch_size, options.nc, options.image_size, options.image_size).pin_memory()
+mu_batch = torch.FloatTensor(options.batch_size, options.nz[0], options.nz[1], options.nz[2]).pin_memory()
+logvar_batch = torch.FloatTensor(options.batch_size, options.nz[0], options.nz[1], options.nz[2]).pin_memory()
 debug_print('Stream buffers are set: %.3f sec elapsed' % (time.time() - tm_buffer_set))
 
 if cuda_available:
@@ -142,6 +172,8 @@ if cuda_available:
     tm_gpu_start = time.time()
     input_batch = input_batch.cuda(async=True)
     recon_batch = recon_batch.cuda(async=True)
+    mu_batch = mu_batch.cuda(async=True)
+    logvar_batch = logvar_batch.cuda(async=True)
     debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
 
 tm_to_variable = time.time()
@@ -169,9 +201,9 @@ if 'AE-LTR' == options.model:
 elif 'VAE-LTR' == options.model:
     model = VAE_LTR(options.nc)
 elif 'AE' == options.model:
-    model = AE(options.nc, options.nz, options.nf)
+    model = AE(options.nc, options.nz[0], options.nf)
 elif 'VAE' == options.model:
-    model = VAE(options.nc, options.nz, options.nf)
+    model = VAE(options.nc, options.nz[0], options.nf)
 assert model
 print(options.model + ' is generated')
 print(model)
@@ -185,10 +217,7 @@ if cuda_available:
     tm_gpu_start = time.time()
 
     # multi-GPU
-    gpu_ids = None
-    if options.num_gpu > 1:
-        gpu_ids = range(options.num_gpu)
-    model = torch.nn.DataParallel(model, device_ids=gpu_ids)
+    model = torch.nn.DataParallel(model, device_ids=options.gpu_ids)
 
     debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
 
