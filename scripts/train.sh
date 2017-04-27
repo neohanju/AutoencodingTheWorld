@@ -26,9 +26,11 @@
 
 
 # enter option
-model="VAE"
+model="VAE-LTR"
 dataset="avenue|ped1|ped2|enter|exit"  # avenue | ped1 | ped2 | enter | exit, and also support 'all'
-epochs="20"
+batch_size="120"
+epochs="100"
+save_freq="20"
 num_gpu="8"
 
 display=true
@@ -90,7 +92,7 @@ else
 fi
 
 # options
-OPT_STRING="--model $model --dataset $dataset --data_root $OPT_DATA_ROOT --save_path $OPT_SAVE_PATH --save_name $OPT_SAVE_NAME --epochs $epochs $OPT_DISPLAY $OPT_DEBUG_PRINT --num_gpu $num_gpu"
+OPT_STRING="--model $model --dataset $dataset --data_root $OPT_DATA_ROOT --save_path $OPT_SAVE_PATH --save_name $OPT_SAVE_NAME --epochs $epochs $OPT_DISPLAY $OPT_DEBUG_PRINT --num_gpu $num_gpu --batch_size $batch_size --save_freq $save_freq"
 
 #run train.py
 CMD_STRING="python $main_dir_relative_path/train.py $OPT_STRING"
