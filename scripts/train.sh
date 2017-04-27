@@ -32,6 +32,7 @@ batch_size="120"
 epochs="100"
 save_freq="20"
 num_gpu="8"
+gpu_ids="0 1 2 3 4 5 6 7"
 
 display=true
 debug_print=false
@@ -90,9 +91,14 @@ if [ $debug_print = true ]; then
 else
 	OPT_DEBUG_PRINT=""
 fi
+if [ $gpu_ids = "" ]: then
+    OPT_GPU_IDS="--gpu_ids $gpu_ids"
+else
+    OPT_GPU_IDS=""
+fi
 
 # options
-OPT_STRING="--model $model --dataset $dataset --data_root $OPT_DATA_ROOT --save_path $OPT_SAVE_PATH --save_name $OPT_SAVE_NAME --epochs $epochs $OPT_DISPLAY $OPT_DEBUG_PRINT --num_gpu $num_gpu --batch_size $batch_size --save_freq $save_freq"
+OPT_STRING="--model $model --dataset $dataset --data_root $OPT_DATA_ROOT --save_path $OPT_SAVE_PATH --save_name $OPT_SAVE_NAME --epochs $epochs $OPT_DISPLAY $OPT_DEBUG_PRINT --num_gpu $num_gpu --batch_size $batch_size --save_freq $save_freq $OPT_GPU_IDS"
 
 #run train.py
 CMD_STRING="python $main_dir_relative_path/train.py $OPT_STRING"

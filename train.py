@@ -56,7 +56,7 @@ parser.add_argument('--display_freq', type=int, default=100, help='display frequ
 # GPU related -----------------------------------------------------------------
 parser.add_argument('--num_gpu', type=int, default=0,
                     help='number of GPUs to use. It will be ignored when gpu_ids options is given. default=0')
-parser.add_argument('--gpu_ids', type=list, default=[],
+parser.add_argument('--gpu_ids', type=list, default=[], nargs='*',
                     help='Indices of GPUs in use. If you give this, num_gpu option input will be ignored. default=[]')
 # network saving related ------------------------------------------------------
 parser.add_argument('--save_freq', type=int, default=100,
