@@ -26,7 +26,7 @@
 
 
 # enter option
-model="VAE-LTR"
+model="VAE"
 dataset="avenue|ped1|ped2|enter|exit"  # avenue | ped1 | ped2 | enter | exit, and also support 'all'
 batch_size="120"
 epochs="100"
@@ -91,7 +91,7 @@ if [ $debug_print = true ]; then
 else
 	OPT_DEBUG_PRINT=""
 fi
-if [ $gpu_ids = "" ]: then
+if [ $gpu_ids = "" ]; then
     OPT_GPU_IDS="--gpu_ids $gpu_ids"
 else
     OPT_GPU_IDS=""
