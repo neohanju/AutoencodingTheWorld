@@ -201,17 +201,44 @@ def save_model(path, model_dict, metadata, console_print=False):
         print('Model is saved at ' + os.path.basename(path))
 
 
+def load_metadata(metadata_path, cur_options=None):
+    # return metadata and options
+    train_info = load_dict_from_json_file(metadata_path)
+    loaded_options = dict_to_namespace(train_info['options'])
+    if cur_options is None:
+        return train_info, loaded_options
+    result_options = cur_options
+    # inheritate some options
+    result_options.model = loaded_options.model
+    result_options.nc = loaded_options.nc
+    result_options.nf = loaded_options.nf
+    result_options.nz = loaded_options.nz
+    result_options.l1_coef = loaded_options.l1_coef
+    result_options.l2_coef = loaded_options.l2_coef
+    result_options.var_loss_coef = loaded_options.var_loss_coef
+
+    result_options.batch_size = loaded_options.batch_size
+    result_options.image_size = loaded_options.image_size
+
+    return train_info, result_options
+
+
 # =============================================================================
 # MISCELLANEOUS
 # =============================================================================
-def get_dataset_paths_and_mean_images(str_dataset, root_path, type):
-    str_dataset.replace(' ', '')  # remove white space
-    str_dataset.replace("'", '')  # remove '
+def get_dataset_paths_and_mean_images(datasets, root_path, type):
+    if isinstance(datasets, str):  # legacy for the previous input option type
+        datasets.replace(' ', '')  # remove white space
+        datasets.replace("'", '')  # remove '
+        if 'all' == datasets:
+            datasets = 'avenue|ped1|ped2|enter|exit'
+        dataset_names = datasets.split('|')
+    else:
+        dataset_names = datasets
+
+    # findout paths
     dataset_paths = []
     mean_images = {}
-    if 'all' == str_dataset:
-        str_dataset = 'avenue|ped1|ped2|enter|exit'
-    dataset_names = str_dataset.split('|')
     for name in dataset_names:
         dataset_paths.append(os.path.join(root_path, name, type))
         mean_images[name] = np.load(os.path.join(root_path, name, 'mean_image.npy'))

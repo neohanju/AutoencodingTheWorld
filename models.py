@@ -291,5 +291,91 @@ class VAE(AE):
         return self.decode(z), mu, logvar
 
 
+# =============================================================================
+# Generator in DC-GAN
+# =============================================================================
+class DCGAN_Generator(nn.Module):
+    def __init__(self, num_target_channels, z_size, num_filters):
+        super().__init__()
+        self.num_target_channels = num_target_channels
+        self.z_size = z_size
+        self.num_filters = num_filters
+        self.main = nn.Sequential(
+            # expected input: (nz) x 1 x 1
+            nn.ConvTranspose2d(z_size, 8 * num_filters, 6, 2, 0, bias=False),
+            nn.BatchNorm2d(8 * num_filters),
+            nn.ReLU(True),
+            # state size: (8 x nf) x 6 x 6
+            nn.ConvTranspose2d(8 * num_filters, 8 * num_filters, 5, 2, 1, bias=False),
+            nn.BatchNorm2d(8 * num_filters),
+            nn.ReLU(True),
+            # state size: (8 x nf) x 13 x 13
+            nn.ConvTranspose2d(8 * num_filters, 4 * num_filters, 5, 2, 1, bias=False),
+            nn.BatchNorm2d(4 * num_filters),
+            nn.ReLU(True),
+            # state size: (4 x nf) x 27 x 27
+            nn.ConvTranspose2d(4 * num_filters, 2 * num_filters, 5, 2, 1, bias=False),
+            nn.BatchNorm2d(2 * num_filters),
+            nn.ReLU(True),
+            # state size: (2 x nf) x 55 x 55
+            nn.ConvTranspose2d(2 * num_filters, num_filters, 5, 2, bias=False),
+            nn.BatchNorm2d(num_filters),
+            nn.ReLU(True),
+            # state size: (nf) x 113 x 113
+            nn.ConvTranspose2d(num_filters, num_target_channels, 5, 2, 1),
+            nn.Tanh()
+            # state size: (c) x 227 x 227
+        )
+
+        # init weights
+        self.main.apply(weight_init)
+
+    def forward(self, x, gpu_ids=None):
+        if gpu_ids is not None:
+            return nn.parallel.data_parallel(self.main, x, gpu_ids)
+        else:
+            return self.main(x)
+
+
+# =============================================================================
+# Discriminator in DC-GAN
+# =============================================================================
+class DCGAN_Discriminator(nn.Module):
+    def __init__(self, num_input_channels, num_filters):
+        super().__init__()
+        self.num_input_channels = num_input_channels
+        self.num_filters = num_filters
+        self.main = nn.Sequential(
+            # expected input: (L) x 227 x 227
+            nn.Conv2d(num_input_channels, num_filters, 5, 2, 1, bias=False),
+            nn.LeakyReLU(0.2, True),
+            # state size: (nf) x 113 x 113
+            nn.Conv2d(num_filters, 2 * num_filters, 5, 2, 1, bias=False),
+            nn.BatchNorm2d(2 * num_filters),
+            nn.LeakyReLU(0.2, True),
+            # state size: (2 x nf) x 56 x 56
+            nn.Conv2d(2 * num_filters, 4 * num_filters, 5, 2, 1, bias=False),
+            nn.BatchNorm2d(4 * num_filters),
+            nn.LeakyReLU(0.2, True),
+            # state size: (4 x nf) x 27 x 27
+            nn.Conv2d(4 * num_filters, 8 * num_filters, 5, 2, 1, bias=False),
+            nn.BatchNorm2d(8 * num_filters),
+            nn.LeakyReLU(0.2, True),
+            # state size: (8 x nf) x 13 x 13
+            nn.Conv2d(8 * num_filters, 8 * num_filters, 5, 2, 1, bias=False),
+            nn.BatchNorm2d(8 * num_filters),
+            nn.LeakyReLU(0.2, True),
+            # state size: (8 x nf) x 6 x 6
+            nn.Conv2d(8 * num_filters, 1, 6, 1, 0, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x, gpu_ids=None):
+        if gpu_ids is not None:
+            output = nn.parallel.data_parallel(self.main, x, gpu_ids)
+        else:
+            output = self.main(x)
+        return output.view(-1, 1)
+
 #()()
 #('')HAANJU.YOO

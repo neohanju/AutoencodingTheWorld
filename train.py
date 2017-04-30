@@ -22,7 +22,7 @@ def debug_print(arg):
 parser = argparse.ArgumentParser(description='Detecting abnormal behavior in videos')
 
 # model related ---------------------------------------------------------------
-parser.add_argument('--model', type=str, required=True, help='AE | AE_LTR | VAE | VAE_LTR')
+parser.add_argument('--model', type=str, default='VAE', help='AE | AE-LTR | VAE | VAE-LTR')
 parser.add_argument('--nc', type=int, default=10, help='number of input channel. default=10')
 parser.add_argument('--nz', type=int, default=200, help='size of the latent z vector. default=100')
 parser.add_argument('--nf', type=int, default=64, help='size of lowest image filters. default=64')
@@ -30,24 +30,21 @@ parser.add_argument('--l1_coef', type=float, default=0, help='coef of L1 regular
 parser.add_argument('--l2_coef', type=float, default=0, help='coef of L2 regularization on the weights. default=0')
 parser.add_argument('--var_loss_coef', type=float, default=1.0, help='balancing coef of vairational loss. default=0')
 # training related ------------------------------------------------------------
+parser.add_argument('--load_model_path', type=str, default='', help='path of pretrained network. default=""')
 parser.add_argument('--batch_size', type=int, default=64, help='input batch size. default=64')
 parser.add_argument('--epochs', type=int, default=10, help='number of epochs to train for. default=25')
 parser.add_argument('--max_iter', type=int, default=150000, help='number of iterations to train for. default=150,000')
-parser.add_argument('--partial_learning', type=float, default=1,
-                    help='ratio of partial data for training. At least one sample from each file. default=1')
-parser.add_argument('--continue_train', action='store_true', default=False,
-                    help='load the latest model to continue the training, default=False')
 # data related ----------------------------------------------------------------
-parser.add_argument('--dataset', type=str, required=True,
+parser.add_argument('--dataset', type=str, required=True, nargs='+',
                     help="all | avenue | ped1 | ped2 | enter | exit. 'all' means using entire data")
 parser.add_argument('--data_root', type=str, required=True, help='path to base folder of entire dataset')
 parser.add_argument('--image_size', type=int, default=227, help='input image size (width=height). default=227')
 parser.add_argument('--workers', type=int, default=2, help='number of data loading workers')
 # optimization related --------------------------------------------------------
-parser.add_argument('--optimiser', type=str, default='adam', help='type of optimizer: adagrad | adam')
+parser.add_argument('--optimizer', type=str, default='adagrad',
+                    help='type of optimizer: adagrad | adam | asgd | sgd. default=adagrad')
 parser.add_argument('--learning_rate', type=float, default=0.0002, help='learning rate. default=0.0002')
-# parser.add_argument('--weight_decay', type=float, default=0.0005,
-#                     help='weight decay coefficient for regularization. default=0.0005')
+parser.add_argument('--learning_rate_decay', type=float, default=0, help='learning rate decay. default=0')
 parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for Adam optimizer. default=0.5')
 # display related -------------------------------------------------------------
 parser.add_argument('--display', action='store_true', default=False,
@@ -75,14 +72,26 @@ options = parser.parse_args()
 if options.random_seed is None:
     options.random_seed = random.randint(1, 10000)
 
+options.continue_train = options.load_model_path != ''
+if options.continue_train:
+    print("load model from '%s'" % os.path.basename(options.load_model_path))
+
+    # load metadata
+    metadata_path = options.load_model_path.replace('.pth', '.json')
+    prev_train_info, options = util.load_metadata(metadata_path, options)
+
+    print('Loaded model was trained %d epochs with %d iterations'
+          % (prev_train_info['epoch_count'], prev_train_info['iter_count']))
+    print('Starting loss : %.3f' % prev_train_info['total_loss'])
+
 # loss type
 options.variational = options.model.find('VAE') != -1
 
 # latent space size
-if options.model.find('_LTR') != -1:
-    options.nz = [128, 13, 13]
+if options.model.find('-LTR') != -1:
+    options.z_size = [128, 13, 13]
 else:
-    options.nz = [options.nz, 1, 1]
+    options.z_size = [options.nz, 1, 1]
 
 # gpu number
 if 0 == len(options.gpu_ids):
@@ -128,7 +137,7 @@ if cuda_available:
 
 # network saving
 model_folder_name = '%s_%s_%s_%s' % (options.model, util.now_to_string(),
-                                     options.dataset.replace('|', '-'), socket.gethostname())
+                                     '-'.join(options.dataset), socket.gethostname())
 save_path = options.save_path
 util.make_dir(save_path)
 print("All results will be saved at '%s'" % save_path)
@@ -152,7 +161,6 @@ win_images = dict(
 # set data loader
 dataset_paths, mean_images = util.get_dataset_paths_and_mean_images(options.dataset, options.data_root, 'train')
 dataset = VideoClipSets(dataset_paths, centered=False)
-# TODO: find out the way to streaming data directly into GPU
 dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=True,
                                          num_workers=options.workers, pin_memory=True)
 for path in dataset_paths:
@@ -163,8 +171,8 @@ debug_print('Data loader is ready')
 tm_buffer_set = time.time()
 input_batch = torch.FloatTensor(options.batch_size, options.nc, options.image_size, options.image_size).pin_memory()
 recon_batch = torch.FloatTensor(options.batch_size, options.nc, options.image_size, options.image_size).pin_memory()
-mu_batch = torch.FloatTensor(options.batch_size, options.nz[0], options.nz[1], options.nz[2]).pin_memory()
-logvar_batch = torch.FloatTensor(options.batch_size, options.nz[0], options.nz[1], options.nz[2]).pin_memory()
+mu_batch = torch.FloatTensor(options.batch_size, options.z_size[0], options.z_size[1], options.z_size[2]).pin_memory()
+logvar_batch = torch.FloatTensor(options.batch_size, options.z_size[0], options.z_size[1], options.z_size[2]).pin_memory()
 debug_print('Stream buffers are set: %.3f sec elapsed' % (time.time() - tm_buffer_set))
 
 if cuda_available:
@@ -195,17 +203,20 @@ debug_print('Utility library is ready')
 # MODEL & LOSS FUNCTION
 # =============================================================================
 # create model instance
-# TODO: load pretrained model
 if 'AE-LTR' == options.model:
     model = AE_LTR(options.nc)
 elif 'VAE-LTR' == options.model:
     model = VAE_LTR(options.nc)
 elif 'AE' == options.model:
-    model = AE(options.nc, options.nz[0], options.nf)
+    model = AE(options.nc, options.nz, options.nf)
 elif 'VAE' == options.model:
-    model = VAE(options.nc, options.nz[0], options.nf)
+    model = VAE(options.nc, options.nz, options.nf)
 assert model
-print(options.model + ' is generated')
+if options.continue_train:
+    model.load_state_dict(torch.load(options.load_model_path))
+    print(options.model + ' is loaded')
+else:
+    print(options.model + ' is generated')
 print(model)
 
 # loss & criterion
@@ -216,8 +227,9 @@ if cuda_available:
     debug_print('Start transferring model to CUDA')
     tm_gpu_start = time.time()
 
-    # multi-GPU
-    model = torch.nn.DataParallel(model, device_ids=options.gpu_ids)
+    # # multi-GPU
+    # model = torch.nn.DataParallel(model, device_ids=options.gpu_ids)
+    model.cuda()
 
     debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
 
@@ -229,24 +241,44 @@ if cuda_available:
 print('Start training...')
 model.train()
 
-# TODO: add ADAGRAD as an option
 # optimizer
-optimizer = optim.Adagrad(model.parameters(),
-                          lr=options.learning_rate,
-                          weight_decay=options.l2_coef)
+if 'adagrad' == options.optimizer:
+    optimizer = optim.Adagrad(model.parameters(), lr=options.learning_rate, lr_decay=options.learning_rate_decay,
+                              weight_decay=options.l2_coef)
+elif 'adam' == options.optimizer:
+    optimizer = optim.Adam(model.parameters(), lr=options.learning_rate, betas=(options.beta1, 0.999),
+                           weight_decay=options.l2_coef)
+elif 'asgd' == options.optimizer:
+    optimizer = optim.ASGD(model.parameters(), lr=options.learning_rate, weight_decay=options.l2_coef)
+elif 'sgd' == options.optimizer:
+    optimizer = optim.SGD(model.parameters(), lr=options.learning_rate, weight_decay=options.l2_coef)
+assert optimizer
 
+# timer related
 tm_data_load_total = 0
 tm_iter_total = 0
 tm_loop_start = time.time()
 time_info = dict(cur_iter=0, train=0, visualize=0, ETC=0)
 
-# TODO: modify iter_count and epoch range with pretrained model's metadata
+# counters
 iter_count = 0
 recent_loss = 0
-loss_info = dict()
-train_info = dict(model=options.model, dataset=options.dataset, iter_count=0, total_loss=0, options=options_dict)
 display_data_count = 0
 
+# for logging
+loss_info = dict()
+train_info = dict(model=options.model, dataset=options.dataset, epoch_count=0, iter_count=0, total_loss=0,
+                  options=options_dict)
+if options.continue_train:
+    train_info['prev_epoch_count'] = prev_train_info['epoch_count']
+    train_info['prev_iter_count'] = prev_train_info['iter_count']
+    train_info['prev_total_loss'] = prev_train_info['total_loss']
+    if 'prev_epoch_count' in prev_train_info:  # this means that the meta data already has previous training info.
+        # accumulate counters
+        train_info['prev_epoch_count'] += prev_train_info['prev_epoch_count']
+        train_info['prev_iter_count'] += prev_train_info['prev_iter_count']
+
+# main loop of training
 for epoch in range(options.epochs):
     loss_per_epoch = []
     tm_cur_epoch_start = tm_cur_iter_start = time.time()

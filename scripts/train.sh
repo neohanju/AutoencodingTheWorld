@@ -27,12 +27,14 @@
 
 # enter option
 model="VAE"
-dataset="avenue|ped1|ped2|enter|exit"  # avenue | ped1 | ped2 | enter | exit, and also support 'all'
+dataset="all"  # avenue | ped1 | ped2 | enter | exit, and also supports 'all'
 batch_size="120"
 epochs="100"
 save_freq="20"
 num_gpu="8"
 gpu_ids="0 1 2 3 4 5 6 7"
+pretrained_model_path=""
+#pretrained_model_path="/home/neohanju/Workspace/Github/VAE_regularization/training_result/VAE_20170501-002802_avenue-ped1-ped2-enter-exit_Ace/VAE_20170501-002802_avenue-ped1-ped2-enter-exit_Ace_latest.pth"
 
 display=true
 debug_print=false
@@ -61,10 +63,10 @@ STARTTIME=$(date +"%Y%m%d-%H%M%S")
 
 # auto generate options
 if [ $dataset = "all" ]; then
-	$dataset="avenue|ped1|ped2|enter|exit"
+	dataset="avenue ped1 ped2 enter exit"
 fi
 OPT_DATA_ROOT=$YCL_DATA_ROOT
-OPT_SAVE_NAME=$model"_"$STARTTIME"_"${dataset//|/-}"_"$HOSTNAME
+OPT_SAVE_NAME=$model"_"$STARTTIME"_"${dataset// /-}"_"$HOSTNAME
 OPT_SAVE_PATH="$result_path/$OPT_SAVE_NAME"
 # echo "OPT_SAVE_NAME is $OPT_SAVE_NAME"
 # echo "OPT_SAVE_PATH is $OPT_SAVE_PATH"
@@ -80,25 +82,35 @@ else
     echo "[WARNING] ${OPT_SAVE_PATH##*/} already exists. Result will be overwritten"
 fi
 
+if [ "$pretrained_model_path" = "" ]; then
+    OPT_LOAD_MODEL=""
+else
+    OPT_LOAD_MODEL="--load_model_path $pretrained_model_path"
+fi
+
 # boolean options
+# display
 if [ $display = true  ]; then
 	OPT_DISPLAY="--display --display_freq $display_freq"
 else
 	OPT_DISPLAY=""
 fi
+# print debug messages to console
 if [ $debug_print = true ]; then
 	OPT_DEBUG_PRINT="--debug_print"
 else
 	OPT_DEBUG_PRINT=""
 fi
-if [ $gpu_ids = "" ]; then
+
+# for multi-GPU env.
+if [ "$gpu_ids" = "" ]; then
     OPT_GPU_IDS="--gpu_ids $gpu_ids"
 else
     OPT_GPU_IDS=""
 fi
 
 # options
-OPT_STRING="--model $model --dataset $dataset --data_root $OPT_DATA_ROOT --save_path $OPT_SAVE_PATH --save_name $OPT_SAVE_NAME --epochs $epochs $OPT_DISPLAY $OPT_DEBUG_PRINT --num_gpu $num_gpu --batch_size $batch_size --save_freq $save_freq $OPT_GPU_IDS"
+OPT_STRING="--model $model --dataset $dataset --data_root $OPT_DATA_ROOT --save_path $OPT_SAVE_PATH --save_name $OPT_SAVE_NAME --epochs $epochs $OPT_DISPLAY $OPT_DEBUG_PRINT --num_gpu $num_gpu --batch_size $batch_size --save_freq $save_freq $OPT_GPU_IDS $OPT_LOAD_MODEL"
 
 #run train.py
 CMD_STRING="python $main_dir_relative_path/train.py $OPT_STRING"
