@@ -56,6 +56,24 @@ def decentering(image, mean_image):
     return gray_single_to_image(image * 255 + mean_image)
 
 
+def find_best_sample_indexes(loss_per_batch, nindex=4):
+    indexes = []
+    indexes_tmp = []
+    for i in range(0, len(loss_per_batch)):
+        if ( nindex > len(indexes_tmp)):
+            indexes_tmp.append([loss_per_batch[i].data.max(), i])
+        else:
+            indexes_tmp.sort()
+            if loss_per_batch[i].data.max() > indexes_tmp[0][0]:
+                indexes_tmp[0][0] = loss_per_batch[i].data.max()
+                indexes_tmp[0][1] = i
+    indexes_tmp.sort()
+    for i in range(0, nindex):
+        indexes.append(indexes_tmp[i][1])
+
+    return indexes
+
+
 def draw_images(win_dict, input_batch, recon_batch, setnames):
     # visualize input / reconstruction pair
     input_data = pick_frame_from_batch(input_batch)
@@ -85,7 +103,29 @@ def draw_images(win_dict, input_batch, recon_batch, setnames):
     return win_dict
 
 
-def viz_append_line_points(win, lines_dict, x_pos, title='losses at each iteration', ylabel='loss', xlabel='iterations'):
+def draw_images_GAN(win_dict, fake, best_indexes):
+    # visualize for GAN (top4 batch)
+    sample_1 = gray_single_to_image(((pick_frame_from_batch(fake, best_indexes[0])*0.5)+0.5)*255)
+    sample_2 = gray_single_to_image(((pick_frame_from_batch(fake, best_indexes[1])*0.5)+0.5)*255)
+    sample_3 = gray_single_to_image(((pick_frame_from_batch(fake, best_indexes[2])*0.5)+0.5)*255)
+    sample_4 = gray_single_to_image(((pick_frame_from_batch(fake, best_indexes[3])*0.5)+0.5)*255)
+
+    if not win_dict['exist']:
+        win_dict['exist'] = True
+        win_dict['1'] = viz.image(sample_1, opts=dict(title='1'))
+        win_dict['2'] = viz.image(sample_2, opts=dict(title='2'))
+        win_dict['3'] = viz.image(sample_3, opts=dict(title='3'))
+        win_dict['4'] = viz.image(sample_4, opts=dict(title='4'))
+    else:
+        viz.image(sample_1, win=win_dict['1'])
+        viz.image(sample_2, win=win_dict['2'])
+        viz.image(sample_3, win=win_dict['3'])
+        viz.image(sample_4, win=win_dict['4'])
+    return win_dict
+
+
+def viz_append_line_points(win, lines_dict, x_pos, title='losses at each iteration', ylabel='loss',
+                           xlabel='iterations'):
     y_len = len(lines_dict.keys())
     assert y_len > 0
     if 1 == y_len:
@@ -103,16 +143,16 @@ def viz_append_line_points(win, lines_dict, x_pos, title='losses at each iterati
         for key in lines_dict.keys():
             legends.append(key)
         win = viz.line(X=x_values, Y=y_values,
-            opts=dict(
-                title=title,
-                xlabel=xlabel,
-                ylabel=ylabel,
-                xtype='linear',
-                ytype='linear',
-                legend=legends,
-                makers=False
-            )
-        )
+                       opts=dict(
+                           title=title,
+                           xlabel=xlabel,
+                           ylabel=ylabel,
+                           xtype='linear',
+                           ytype='linear',
+                           legend=legends,
+                           makers=False
+                       )
+                       )
     else:
         viz.line(X=x_values, Y=y_values, win=win, update='append')
 
@@ -247,8 +287,8 @@ def get_dataset_paths_and_mean_images(datasets, root_path, type):
 
 def formatted_time(time_sec):
     days, rem = divmod(time_sec, 86400)  # days
-    hours, rem = divmod(rem, 3600)       # hours
-    minutes, seconds = divmod(rem, 60)   # minutes
+    hours, rem = divmod(rem, 3600)  # hours
+    minutes, seconds = divmod(rem, 60)  # minutes
 
     if 0 < days:
         return '%02d:%02d:%06.3f' % (int(hours), int(minutes), seconds)
@@ -258,8 +298,6 @@ def formatted_time(time_sec):
 
 def now_to_string():
     return strftime("%Y%m%d-%H%M%S", gmtime())
-
-
 
 # ()()
 # ('') HAANJU.YOO

@@ -21,10 +21,12 @@ def weight_init(module):
 class OurLoss:
     def __init__(self, cuda=False):
         self.reconstruction_criteria = nn.MSELoss(size_average=False)
+        self.GAN_criteria = nn.BCELoss(size_average=False)
         # l1_regularize_criteria = nn.L1Loss(size_average=False)
         # l1_target = Variable([])
         if cuda:
             self.reconstruction_criteria.cuda()
+            self.GAN_criteria.cuda()
 
     def calculate(self, recon_x, x, options, mu=None, logvar=None):
         # thanks to Autograd, you can train the net by just summing-up all losses and propagating them
@@ -51,6 +53,38 @@ class OurLoss:
         loss_info['total'] = total_loss.data[0]
 
         return total_loss, loss_info
+
+    def calculate_GAN(self, output, label, loss_per_batch=False):
+        batch_loss = []
+        loss = 0
+        size_mini_batch = output.data.size()[0]
+        if loss_per_batch:
+            for i in range(0, size_mini_batch):
+                batch_loss.append(self.GAN_criteria(output[i], label[i]))
+                loss = batch_loss[i]+loss
+
+            loss = loss.div_(size_mini_batch)
+            return loss, batch_loss
+        else:
+            loss = self.GAN_criteria(output, label).div_(size_mini_batch)
+            return loss
+
+        '''
+        if options.variational:
+            assert mu is not None and logvar is not None
+            # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+            kld_element = mu.pow(2).add_(logvar.exp()).mul_(-1).add_(1).add_(logvar)
+            kld_loss = torch.sum(kld_element).mul_(-0.5)
+            kld_loss_final = kld_loss.div_(size_mini_batch).mul_(options.var_loss_coef)
+            loss_info['variational'] = kld_loss_final.data[0]
+            total_loss += kld_loss_final
+        '''
+        # if 0.0 != options.l1_coef:
+        #     l1_loss = options.l1_coef * l1_regularize_criteria(model.parameters(), l1_target)
+        #     loss_info['l1_reg'] = l1_loss.data[0]
+        #     # params.data -= options.learning_rate * params.grad.data
+        #     total_loss += l1_loss
+
 
 
 # =============================================================================
