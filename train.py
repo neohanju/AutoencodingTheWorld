@@ -162,26 +162,26 @@ win_images = dict(
 dataset_paths, mean_images = util.get_dataset_paths_and_mean_images(options.dataset, options.data_root, 'train')
 dataset = VideoClipSets(dataset_paths, centered=False)
 dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=True,
-                                         num_workers=options.workers, pin_memory=True)
+                                         num_workers=options.workers)
 for path in dataset_paths:
     print("Dataset from '%s'" % path)
 debug_print('Data loader is ready')
 
 # streaming buffer
 tm_buffer_set = time.time()
-input_batch = torch.FloatTensor(options.batch_size, options.nc, options.image_size, options.image_size).pin_memory()
-recon_batch = torch.FloatTensor(options.batch_size, options.nc, options.image_size, options.image_size).pin_memory()
-mu_batch = torch.FloatTensor(options.batch_size, options.z_size[0], options.z_size[1], options.z_size[2]).pin_memory()
-logvar_batch = torch.FloatTensor(options.batch_size, options.z_size[0], options.z_size[1], options.z_size[2]).pin_memory()
+input_batch = torch.FloatTensor(options.batch_size, options.nc, options.image_size, options.image_size)
+recon_batch = torch.FloatTensor(options.batch_size, options.nc, options.image_size, options.image_size)
+mu_batch = torch.FloatTensor(options.batch_size, options.z_size[0], options.z_size[1], options.z_size[2])
+logvar_batch = torch.FloatTensor(options.batch_size, options.z_size[0], options.z_size[1], options.z_size[2])
 debug_print('Stream buffers are set: %.3f sec elapsed' % (time.time() - tm_buffer_set))
 
 if cuda_available:
     debug_print('Start transferring to CUDA')
     tm_gpu_start = time.time()
-    input_batch = input_batch.cuda(async=True)
-    recon_batch = recon_batch.cuda(async=True)
-    mu_batch = mu_batch.cuda(async=True)
-    logvar_batch = logvar_batch.cuda(async=True)
+    input_batch = input_batch.cuda()
+    recon_batch = recon_batch.cuda()
+    mu_batch = mu_batch.cuda()
+    logvar_batch = logvar_batch.cuda()
     debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
 
 tm_to_variable = time.time()
