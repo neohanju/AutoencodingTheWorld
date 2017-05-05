@@ -231,6 +231,7 @@ def file_print_recon_costs(path, costs, overwrite=True):
 
 def save_model(path, model_dict, metadata, console_print=False):
     assert isinstance(metadata, dict)
+    assert isinstance(model_dict, dict)
     # save network
     net_path = path if path.find('.pth') != -1 else path + '.pth'
     torch.save(model_dict, net_path)
@@ -260,7 +261,9 @@ def load_metadata(metadata_path, cur_options=None):
     result_options.batch_size = loaded_options.batch_size
     result_options.image_size = loaded_options.image_size
 
-    return train_info, result_options
+    result_options.z_size = loaded_options.z_size
+
+    return train_info, result_options, loaded_options
 
 
 # =============================================================================

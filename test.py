@@ -1,10 +1,7 @@
 import argparse
 import os
-import sys
 import random
 import time
-import glob
-import numpy as np
 import torch.utils.data
 from torch.autograd import Variable
 from models import AE, VAE, AE_LTR, VAE_LTR, OurLoss
@@ -49,13 +46,10 @@ if options.random_seed is None:
 
 # load options from metadata
 metadata_path = options.model_path.replace('.pth', '.json')
-
-# restore network information from metadata
-train_info = util.load_dict_from_json_file(metadata_path)
-saved_options = util.dict_to_namespace(train_info['options'])
-options_dict = util.namespace_to_dict(options)
+train_info, options, saved_options = util.load_metadata(metadata_path, options)
 
 # print test options
+options_dict = util.namespace_to_dict(options)
 print('Options={')
 for k, v in options_dict.items():
     print('\t' + k + ':', v)
@@ -97,15 +91,15 @@ win_images = dict(
 # =============================================================================
 dataset_paths, mean_images = util.get_dataset_paths_and_mean_images(options.dataset, options.data_root, 'test')
 dataset = VideoClipSets(dataset_paths)
-dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=False,
+dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=1, shuffle=False,
                                          num_workers=1, pin_memory=True)
 
 # streaming buffer
 tm_buffer_set = time.time()
 input_batch = torch.FloatTensor(1, saved_options.nc, saved_options.image_size, saved_options.image_size)
 recon_batch = torch.FloatTensor(1, saved_options.nc, saved_options.image_size, saved_options.image_size)
-mu_batch = torch.FloatTensor(options.batch_size, options.nz[0], options.nz[1], options.nz[2])
-logvar_batch = torch.FloatTensor(options.batch_size, options.nz[0], options.nz[1], options.nz[2])
+mu_batch = torch.FloatTensor(1, options.z_size[0], options.z_size[1], options.z_size[2])
+logvar_batch = torch.FloatTensor(1, options.z_size[0], options.z_size[1], options.z_size[2])
 debug_print('Stream buffers are set: %.3f sec elapsed' % (time.time() - tm_buffer_set))
 
 if cuda_available:
@@ -140,9 +134,9 @@ if 'AE-LTR' == saved_options.model:
 elif 'VAE-LTR' == saved_options.model:
     model = VAE_LTR(saved_options.nc)
 elif 'AE' == saved_options.model:
-    model = AE(saved_options.nc, saved_options.nz[0], saved_options.nf)
+    model = AE(saved_options.nc, saved_options.z_size[0], saved_options.nf)
 elif 'VAE' == saved_options.model:
-    model = VAE(saved_options.nc, saved_options.nz[0], saved_options.nf)
+    model = VAE(saved_options.nc, saved_options.z_size[0], saved_options.nf)
 assert model
 model.load_state_dict(torch.load(options.model_path))
 
@@ -169,7 +163,7 @@ recon_costs = {}
 sample_index = 0
 
 print('Start testing...')
-tm_test_start= time.time()
+tm_test_start = time.time()
 
 cost_file_path = ''
 prev_dataset_name = ''
@@ -195,7 +189,7 @@ for i, (data, dataset_name, video_name) in enumerate(dataloader, 0):
 
     # visualization
     if options.display:
-        win_images = util.draw_images(win_images, input_batch, recon_batch.data, [dataset_name])
+        win_images = util.draw_images(win_images, input_batch, recon_batch.data, dataset_name)
         win_recon_cost = util.viz_append_line_points(win=win_recon_cost,
                                                      lines_dict=dict(recon=cur_cost, zero=0),
                                                      x_pos=cnt_cost,
