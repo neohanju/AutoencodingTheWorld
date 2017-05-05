@@ -175,7 +175,8 @@ for i, (data, dataset_name, video_name) in enumerate(dataloader, 0):
     if prev_dataset_name != dataset_name or prev_video_name != video_name:
         # new video is started
         print("Testing on '%s' dataset video '%s'... " % (dataset_name, video_name))
-        cost_file_path = os.path.join(save_path, '%s_video_%s_%s.txt' % (dataset_name, video_name, saved_options.model))
+        cost_file_path = os.path.join(save_path, '%s_video_%s_%s.txt'
+                                      % (dataset_name[0], video_name[0], saved_options.model))
         util.file_print_recon_costs(cost_file_path, [], overwrite=True)
         cnt_cost = 0
         win_recon_cost = None
