@@ -42,6 +42,13 @@ class VideoClipSets(torch.utils.data.Dataset):
                 mean_image_cube = mean_image[np.newaxis, :, :].repeat(num_input_channel, axis=0)
                 self.mean_images[cur_dataset_name] = torch.FloatTensor(mean_image_cube)
 
+        # sort samples by file names
+        idx_path_pairs = [pair for pair in enumerate(self.file_paths, 0)]
+        idx_path_pairs = sorted(idx_path_pairs, key=lambda pair: (os.path.dirname(pair[1]), os.path.basename(pair[1])))
+        self.file_paths = [pair[1] for pair in idx_path_pairs]
+        self.dataset_names = [self.dataset_names[pair[0]] for pair in idx_path_pairs]
+        self.video_names = [self.video_names[pair[0]] for pair in idx_path_pairs]
+
         # count samples
         self.num_samples = len(self.file_paths)
         assert self.num_samples > 0
