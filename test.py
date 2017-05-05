@@ -25,7 +25,7 @@ parser.add_argument('--model_path', type=str, required=True, help='path to train
 # output related --------------------------------------------------------------
 parser.add_argument('--output_type', type=str, default='recon_costs', help='type of output')
 # data related ----------------------------------------------------------------
-parser.add_argument('--dataset', type=str, required=True,
+parser.add_argument('--dataset', type=str, required=True, nargs='+',
                     help="all | avenue | ped1 | ped2 | enter | exit. 'all' means using entire data")
 parser.add_argument('--data_root', type=str, required=True, help='path to base folder of entire dataset')
 # display related -------------------------------------------------------------
@@ -180,6 +180,7 @@ for i, (data, dataset_name, video_name) in enumerate(dataloader, 0):
         util.file_print_recon_costs(cost_file_path, [], overwrite=True)
         cnt_cost = 0
         win_recon_cost = None
+        prev_dataset_name, prev_video_name = dataset_name, video_name
 
     # forward
     recon_batch, mu_batch, logvar_batch = model(input_batch)
@@ -188,14 +189,17 @@ for i, (data, dataset_name, video_name) in enumerate(dataloader, 0):
     cur_cost = loss_detail['recon']
     cnt_cost += 1
 
+    print('%s_video_%s:%04d, cost = %.3f' % (dataset_name[0], video_name[0], cnt_cost, cur_cost))
+
     # visualization
     if options.display:
         win_images = util.draw_images(win_images, input_batch, recon_batch.data, dataset_name)
         win_recon_cost = util.viz_append_line_points(win=win_recon_cost,
                                                      lines_dict=dict(recon=cur_cost, zero=0),
                                                      x_pos=cnt_cost,
-                                                     title='%s video_%s' % (dataset_name, video_name),
+                                                     title='%s: video_%s' % (dataset_name[0], video_name[0]),
                                                      ylabel='reconstruction cost', xlabel='sample index')
+        time.sleep(0.005)  # for reliable drawing
 
     # save cost
     util.file_print_recon_costs(cost_file_path, [cur_cost], overwrite=True)
