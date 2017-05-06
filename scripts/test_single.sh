@@ -33,7 +33,7 @@
 # ===================================================================
 
 # enter option
-dataset="avenue|enter|exit"  # avenue | ped1 | ped2 | enter | exit, and also support 'all'
+dataset="avenue enter exit"  # avenue | ped1 | ped2 | enter | exit, and also support 'all'
 display=true  # set this when you want to see the result with 'Visdom' package
 debug_print=false
 
@@ -50,13 +50,13 @@ echo " Start testing"
 echo "=========================="
 
 # check the location of this script
-BASEDIR=$(dirname "$0")
+BASEDIR=$(pwd)
 echo "Script is plased at : $BASEDIR"
-main_dir_relative_path="$BASEDIR/../.."  # MAIN_DIR / training_result / NETWORK_DIR
+main_dir_relative_path=$(dirname $(dirname $BASEDIR))
 
 # auto generate options
 if [ $dataset = "all" ]; then
-	$dataset="avenue|ped1|ped2|enter|exit"
+	$dataset="avenue ped1 ped2 enter exit"
 fi
 OPT_DATA_ROOT=$YCL_DATA_ROOT
 OPT_SAVE_NAME=$model"_"$STARTTIME"_"${dataset//|/-}"_"$HOSTNAME
