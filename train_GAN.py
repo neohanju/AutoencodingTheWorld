@@ -32,7 +32,7 @@ parser.add_argument('--l1_coef', type=float, default=0, help='coef of L1 regular
 parser.add_argument('--l2_coef', type=float, default=0, help='coef of L2 regularization on the weights. default=0')
 parser.add_argument('--var_loss_coef', type=float, default=1.0, help='balancing coef of vairational loss. default=0')
 # training related ------------------------------------------------------------
-parser.add_argument('--load_model_path', type=str, default="",
+parser.add_argument('--model_path', type=str, default="",
                     help='path of pretrained networks. If you put only one, that is regarded as the directory '
                          'containing networks. default=""')
 parser.add_argument('--load_model_type', type=str, default="_latest")
@@ -54,7 +54,7 @@ parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for Adam opt
 # display related -------------------------------------------------------------
 parser.add_argument('--display', action='store_true', default=False,
                     help='visualize things with visdom or not. default=False')
-parser.add_argument('--display_freq', type=int, default=100, help='display frequency w.r.t. iterations. default=5')
+parser.add_argument('--display_interval', type=int, default=100, help='display frequency w.r.t. iterations. default=5')
 parser.add_argument('--display_maxclip', action='store_true', default=False,
                     help='loss larger then 10,000 will not be dwarwn at the loss graph')
 # GPU related -----------------------------------------------------------------
@@ -63,7 +63,7 @@ parser.add_argument('--num_gpu', type=int, default=0,
 parser.add_argument('--gpu_ids', type=int, default=[], nargs='*',
                     help='Indices of GPUs in use. If you give this, num_gpu option input will be ignored. default=[]')
 # network saving related ------------------------------------------------------
-parser.add_argument('--save_freq', type=int, default=100,
+parser.add_argument('--save_interval', type=int, default=100,
                     help='network saving frequency w.r.t. epoch number. default=500')
 parser.add_argument('--save_path', type=str, default='./training_result',
                     help='path to trained network. default=./training_result')
@@ -79,14 +79,14 @@ options = parser.parse_args()
 if options.random_seed is None:
     options.random_seed = random.randint(1, 10000)
 
-options.continue_train = options.load_model_path != ''
+options.continue_train = options.model_path != ''
 if options.continue_train:
-    options.load_model_path = options.load_model_path+ '/' + os.path.basename(options.load_model_path)
-    print("load model from '%s'" % os.path.basename(options.load_model_path))
+    options.model_path = options.model_path+ '/' + os.path.basename(options.model_path)
+    print("load model from '%s'" % os.path.basename(options.model_path))
 
     # load metadata
     # you can use _netG instead. they are same thing.
-    metadata_path = options.load_model_path + '_netD' + options.load_model_type+'.json'
+    metadata_path = options.model_path + '_netD' + options.load_model_type+'.json'
     print(metadata_path)
     prev_train_info, options = util.load_metadata(metadata_path, options)
 
@@ -209,7 +209,7 @@ if 'DCGAN' == options.model:
 assert netG
 if options.continue_train:
     # todo load model path for netG
-    netG.load_state_dict(torch.load(options.load_model_path + '_netG' + options.load_model_type + '.pth'))
+    netG.load_state_dict(torch.load(options.model_path + '_netG' + options.load_model_type + '.pth'))
     print(options.model + ' is loaded')
 else:
     print(options.model + ' is generated')
@@ -218,7 +218,7 @@ print(netG)
 assert netD
 if options.continue_train:
     # todo load model path for netD
-    netD.load_state_dict(torch.load(options.load_model_path + '_netD' + options.load_model_type + '.pth'))
+    netD.load_state_dict(torch.load(options.model_path + '_netD' + options.load_model_type + '.pth'))
     print(options.model + ' is loaded')
 else:
     print(options.model + ' is generated')
@@ -385,7 +385,7 @@ for epoch in range(options.epochs):
             win_images = util.draw_images_GAN(win_images, fake, best_sample_indexes)
 
             # draw graph at every drawing period
-            if 0 == iter_count % options.display_freq:
+            if 0 == iter_count % options.display_interval:
                 loss_info = {key: value / display_data_count for key, value in loss_info.items()}
                 win_loss = util.viz_append_line_points(win_loss, loss_info, iter_count)
                 loss_info = dict.fromkeys(loss_info, 0)
@@ -429,7 +429,7 @@ for epoch in range(options.epochs):
           % (epoch+1, util.formatted_time(time.time() - tm_cur_epoch_start)))
 
     # checkpoint w.r.t. epoch
-    if 0 == (epoch+1) % options.save_freq:
+    if 0 == (epoch+1) % options.save_interval:
         util.save_model(os.path.join(save_path, '%s_epoch_%03d.pth')
                         % (options.save_name + '_netD', epoch + 1), netD.state_dict(), train_info, True)
         util.save_model(os.path.join(save_path, '%s_epoch_%03d.pth')

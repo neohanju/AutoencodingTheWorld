@@ -30,7 +30,7 @@ model="DCGAN"
 dataset="all"  # avenue | ped1 | ped2 | enter | exit, and also supports 'all'
 batch_size="120"
 epochs="100"
-save_freq="20"
+save_interval="20"
 num_gpu="8"
 gpu_ids="0 1 2 3 4 5 6 7"
 pretrained_model_path=""
@@ -39,7 +39,7 @@ pretrained_model_path=""
 display=false
 debug_print=false
 
-display_freq="25"
+display_interval="1"
 
 # enter processing type
 do_test=false
@@ -91,7 +91,7 @@ fi
 # boolean options
 # display
 if [ $display = true  ]; then
-	OPT_DISPLAY="--display --display_freq $display_freq"
+	OPT_DISPLAY="--display --display_interval $display_interval"
 else
 	OPT_DISPLAY=""
 fi
@@ -110,7 +110,7 @@ else
 fi
 
 # options
-OPT_STRING="--model $model --dataset $dataset --data_root $OPT_DATA_ROOT --save_path $OPT_SAVE_PATH --save_name $OPT_SAVE_NAME --epochs $epochs $OPT_DISPLAY $OPT_DEBUG_PRINT --num_gpu $num_gpu --batch_size $batch_size --save_freq $save_freq $OPT_GPU_IDS $OPT_LOAD_MODEL"
+OPT_STRING="--model $model --dataset $dataset --data_root $OPT_DATA_ROOT --save_path $OPT_SAVE_PATH --save_name $OPT_SAVE_NAME --epochs $epochs $OPT_DISPLAY $OPT_DEBUG_PRINT --num_gpu $num_gpu --batch_size $batch_size --save_interval $save_interval $OPT_GPU_IDS $OPT_LOAD_MODEL"
 
 #run train.py
 CMD_STRING="python $main_dir_relative_path/train_GAN.py $OPT_STRING"

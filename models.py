@@ -247,7 +247,7 @@ class AE(nn.Module):
         super().__init__()
         self.encoder = nn.Sequential(
             # expected input: (L) x 227 x 227
-            nn.Conv2d(num_in_channels, num_filters, 11, 4, 1),
+            nn.Conv2d(num_in_channels, num_filters, 5, 2, 1),
             nn.BatchNorm2d(num_filters),
             nn.LeakyReLU(0.2, True),
             # state size: (nf) x 113 x 113

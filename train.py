@@ -49,15 +49,15 @@ parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for Adam opt
 # display related -------------------------------------------------------------
 parser.add_argument('--display', action='store_true', default=False,
                     help='visualize things with visdom or not. default=False')
-parser.add_argument('--display_freq', type=int, default=100, help='display frequency w.r.t. iterations. default=5')
+parser.add_argument('--display_interval', type=int, default=1, help='display interval w.r.t. epoch. default=1')
 # GPU related -----------------------------------------------------------------
 parser.add_argument('--num_gpu', type=int, default=0,
                     help='number of GPUs to use. It will be ignored when gpu_ids options is given. default=0')
 parser.add_argument('--gpu_ids', type=int, default=[], nargs='*',
                     help='Indices of GPUs in use. If you give this, num_gpu option input will be ignored. default=[]')
 # network saving related ------------------------------------------------------
-parser.add_argument('--save_freq', type=int, default=100,
-                    help='network saving frequency w.r.t. epoch number. default=500')
+parser.add_argument('--save_interval', type=int, default=100,
+                    help='network saving interval w.r.t. epoch number. default=100')
 parser.add_argument('--save_path', type=str, default='./training_result',
                     help='path to trained network. default=./training_result')
 parser.add_argument('--save_name', type=str, default='', help='name for network saving')
@@ -205,7 +205,6 @@ debug_print('Utility library is ready')
 model, our_loss = init_model_and_loss(options, cuda_available)
 print(model)
 
-
 # =============================================================================
 # TRAINING
 # =============================================================================
@@ -213,16 +212,17 @@ print('Start training...')
 model.train()
 
 # optimizer
+model_params = model.parameters()
 if 'adagrad' == options.optimizer:
-    optimizer = optim.Adagrad(model.parameters(), lr=options.learning_rate, lr_decay=options.learning_rate_decay,
+    optimizer = optim.Adagrad(model_params, lr=options.learning_rate, lr_decay=options.learning_rate_decay,
                               weight_decay=options.l2_coef)
 elif 'adam' == options.optimizer:
-    optimizer = optim.Adam(model.parameters(), lr=options.learning_rate, betas=(options.beta1, 0.999),
+    optimizer = optim.Adam(model_params, lr=options.learning_rate, betas=(options.beta1, 0.999),
                            weight_decay=options.l2_coef)
 elif 'asgd' == options.optimizer:
-    optimizer = optim.ASGD(model.parameters(), lr=options.learning_rate, weight_decay=options.l2_coef)
+    optimizer = optim.ASGD(model_params, lr=options.learning_rate, weight_decay=options.l2_coef)
 elif 'sgd' == options.optimizer:
-    optimizer = optim.SGD(model.parameters(), lr=options.learning_rate, weight_decay=options.l2_coef)
+    optimizer = optim.SGD(model_params, lr=options.learning_rate, weight_decay=options.l2_coef)
 assert optimizer
 
 # timer related
@@ -230,14 +230,16 @@ tm_data_load_total = 0
 tm_iter_total = 0
 tm_loop_start = time.time()
 time_info = dict(cur_iter=0, train=0, visualize=0, ETC=0)
+time_info_vis = dict()
 
 # counters
 iter_count = 0
 recent_loss = 0
-display_data_count = 0
+num_iters_in_epoch = 0
 
 # for logging
 loss_info = dict()
+loss_info_vis = dict()
 train_info = dict(model=options.model, dataset=options.dataset, epoch_count=0, iter_count=0, total_loss=0,
                   options=options_dict)
 if options.continue_train:
@@ -251,9 +253,9 @@ if options.continue_train:
 
 # main loop of training
 for epoch in range(options.epochs):
-    loss_per_epoch = []
     tm_cur_epoch_start = tm_cur_iter_start = time.time()
     for i, (data, setname, _) in enumerate(dataloader, 1):
+        num_iters_in_epoch = i
 
         # ============================================
         # DATA FEED
@@ -289,31 +291,16 @@ for epoch in range(options.epochs):
         # ============================================
         # VISUALIZATION
         # ============================================
-        display_data_count += 1
         tm_visualize_start = time.time()
         if options.display:
             # draw input/recon images
             win_images = util.draw_images(win_images, data, recon_batch.data, setname)
-
-            # draw graph at every drawing period
-            if 0 == iter_count % options.display_freq:
-                loss_info = {key: value / display_data_count for key, value in loss_info.items()}
-                win_loss = util.viz_append_line_points(win_loss, loss_info, iter_count)
-                loss_info = dict.fromkeys(loss_info, 0)
-
-                time_info = {key: value / display_data_count for key, value in time_info.items()}
-                win_time = util.viz_append_line_points(win_time, time_info, iter_count,
-                                                       title='times at each iteration',
-                                                       ylabel='time', xlabel='iterations')
-                time_info = dict.fromkeys(time_info, 0)
-                display_data_count = 0
+        tm_visualize_consume = time.time() - tm_visualize_start
 
         # print iteration's summary
         print('[%4d/%4d][%3d/%3d] Iter:%4d\t %s \tTotal time elapsed: %s'
               % (epoch+1, options.epochs, i, len(dataloader), iter_count+1, util.get_loss_string(loss_detail),
                  util.formatted_time(time.time() - tm_loop_start)))
-
-        tm_visualize_consume = time.time() - tm_visualize_start
 
         # ============================================
         # NETWORK BACK-UP
@@ -328,15 +315,38 @@ for epoch in range(options.epochs):
         tm_etc_consume = tm_iter_consume - tm_train_iter_consume - tm_visualize_consume
         time_info['cur_iter'] += tm_iter_consume
         time_info['ETC'] += tm_etc_consume
+        time_info['visualize'] += tm_visualize_consume
         # ===============================================
         tm_cur_iter_start = time.time()  # to measure the time of enumeration of the loop controller, set timer at here
         iter_count += 1
 
-    print('====> Epoch %d is terminated: Epoch time is %s'
-          % (epoch+1, util.formatted_time(time.time() - tm_cur_epoch_start)))
+    average_loss_info = {key: value / num_iters_in_epoch for key, value in loss_info.items()}
+    average_time_info = {key: value / num_iters_in_epoch for key, value in time_info.items()}
+    loss_info = dict.fromkeys(loss_info, 0)
+    time_info = dict.fromkeys(time_info, 0)
+
+    print('====> Epoch %d is terminated: Epoch time is %s, Average loss is %.3f'
+          % (epoch+1, util.formatted_time(time.time() - tm_cur_epoch_start), average_loss_info['total']))
+
+    # draw graph at every drawing period (always draw at the beginning(= epoch zero))
+    loss_info_vis = util.add_dict(average_loss_info, loss_info_vis)
+    time_info_vis = util.add_dict(average_time_info, time_info_vis)
+    if 0 == (epoch+1) % options.display_interval or 0 == epoch:
+        # averaging w.r.t. display frequency
+        if 1 != options.display_interval and 0 != epoch:
+            loss_info_vis = {key: value / options.display_interval for key, value in loss_info_vis.items()}
+            time_info_vis = {key: value / options.display_interval for key, value in time_info_vis.items()}
+        # draw graphs
+        win_loss = util.viz_append_line_points(win_loss, loss_info_vis, epoch)
+        win_time = util.viz_append_line_points(win_time, time_info_vis, epoch,
+                                               title='times at each iteration',
+                                               ylabel='time', xlabel='iterations')
+        # reset buffers
+        loss_info_vis = dict.fromkeys(loss_info_vis, 0)
+        time_info_vis = dict.fromkeys(time_info_vis, 0)
 
     # checkpoint w.r.t. epoch
-    if 0 == (epoch+1) % options.save_freq:
+    if 0 == (epoch+1) % options.save_interval:
         util.save_model(os.path.join(save_path, '%s_epoch_%03d.pth')
                         % (options.save_name, epoch+1), model.state_dict(), train_info, True)
 
