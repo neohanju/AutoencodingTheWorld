@@ -6,7 +6,7 @@ import socket
 import torch.utils.data
 import torch.optim as optim
 from torch.autograd import Variable
-from models import AE, VAE, AE_LTR, VAE_LTR, OurLoss
+from models import init_model_and_loss
 from data import VideoClipSets
 import utils as util
 
@@ -22,7 +22,7 @@ def debug_print(arg):
 parser = argparse.ArgumentParser(description='Detecting abnormal behavior in videos')
 
 # model related ---------------------------------------------------------------
-parser.add_argument('--model', type=str, default='VAE', help='AE | AE-LTR | VAE | VAE-LTR')
+parser.add_argument('--model', type=str, default='VAE', help='AE | AE-LTR | VAE | VAE-LTR | VAE-NARROW')
 parser.add_argument('--nc', type=int, default=10, help='number of input channel. default=10')
 parser.add_argument('--nz', type=int, default=200, help='size of the latent z vector. default=100')
 parser.add_argument('--nf', type=int, default=64, help='size of lowest image filters. default=64')
@@ -30,7 +30,7 @@ parser.add_argument('--l1_coef', type=float, default=0, help='coef of L1 regular
 parser.add_argument('--l2_coef', type=float, default=0, help='coef of L2 regularization on the weights. default=0')
 parser.add_argument('--var_loss_coef', type=float, default=1.0, help='balancing coef of vairational loss. default=0')
 # training related ------------------------------------------------------------
-parser.add_argument('--load_model_path', type=str, default='', help='path of pretrained network. default=""')
+parser.add_argument('--model_path', type=str, default='', help='path of pretrained network. default=""')
 parser.add_argument('--batch_size', type=int, default=64, help='input batch size. default=64')
 parser.add_argument('--epochs', type=int, default=10, help='number of epochs to train for. default=25')
 parser.add_argument('--max_iter', type=int, default=150000, help='number of iterations to train for. default=150,000')
@@ -72,13 +72,13 @@ options = parser.parse_args()
 if options.random_seed is None:
     options.random_seed = random.randint(1, 10000)
 
-options.continue_train = options.load_model_path != ''
+options.continue_train = options.model_path != ''
 if options.continue_train:
-    print("load model from '%s'" % os.path.basename(options.load_model_path))
+    print("load model from '%s'" % os.path.basename(options.model_path))
 
     # load metadata
-    metadata_path = options.load_model_path.replace('.pth', '.json')
-    prev_train_info, options = util.load_metadata(metadata_path, options)
+    metadata_path = options.model_path.replace('.pth', '.json')
+    prev_train_info, options, _ = util.load_metadata(metadata_path, options)
 
     print('Loaded model was trained %d epochs with %d iterations'
           % (prev_train_info['epoch_count'], prev_train_info['iter_count']))
@@ -202,42 +202,13 @@ debug_print('Utility library is ready')
 # =============================================================================
 # MODEL & LOSS FUNCTION
 # =============================================================================
-# create model instance
-if 'AE-LTR' == options.model:
-    model = AE_LTR(options.nc)
-elif 'VAE-LTR' == options.model:
-    model = VAE_LTR(options.nc)
-elif 'AE' == options.model:
-    model = AE(options.nc, options.nz, options.nf)
-elif 'VAE' == options.model:
-    model = VAE(options.nc, options.nz, options.nf)
-assert model
-if options.continue_train:
-    model.load_state_dict(torch.load(options.load_model_path))
-    print(options.model + ' is loaded')
-else:
-    print(options.model + ' is generated')
+model, our_loss = init_model_and_loss(options, cuda_available)
 print(model)
-
-# loss & criterion
-our_loss = OurLoss(cuda_available)
-
-# to gpu
-if cuda_available:
-    debug_print('Start transferring model to CUDA')
-    tm_gpu_start = time.time()
-
-    # # multi-GPU
-    # model = torch.nn.DataParallel(model, device_ids=options.gpu_ids)
-    model.cuda()
-
-    debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
 
 
 # =============================================================================
 # TRAINING
 # =============================================================================
-
 print('Start training...')
 model.train()
 

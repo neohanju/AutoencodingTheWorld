@@ -4,7 +4,7 @@ import random
 import time
 import torch.utils.data
 from torch.autograd import Variable
-from models import AE, VAE, AE_LTR, VAE_LTR, OurLoss
+from models import init_model_and_loss
 from data import VideoClipSets
 import utils as util
 
@@ -128,30 +128,8 @@ debug_print('Utility library is ready')
 # =============================================================================
 # MODEL
 # =============================================================================
-# create model instance
-if 'AE-LTR' == saved_options.model:
-    model = AE_LTR(saved_options.nc)
-elif 'VAE-LTR' == saved_options.model:
-    model = VAE_LTR(saved_options.nc)
-elif 'AE' == saved_options.model:
-    model = AE(saved_options.nc, saved_options.z_size[0], saved_options.nf)
-elif 'VAE' == saved_options.model:
-    model = VAE(saved_options.nc, saved_options.z_size[0], saved_options.nf)
-assert model
-model.load_state_dict(torch.load(options.model_path))
-
-print(saved_options.model + ' is loaded')
+model, our_loss = init_model_and_loss(options, cuda_available)
 print(model)
-
-# loss & criterions
-our_loss = OurLoss(cuda_available)
-
-# to gpu
-if cuda_available:
-    debug_print('Start transferring model to CUDA')
-    tm_gpu_start = time.time()
-    model.cuda()
-    debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
 
 
 # =============================================================================
@@ -206,56 +184,6 @@ for i, (data, dataset_name, video_name) in enumerate(dataloader, 0):
 
     # save cost
     util.file_print_recon_costs(cost_file_path, [cur_cost], overwrite=True)
-
-
-# for i, dataset_path in enumerate(dataset_paths, 1):
-#
-#     test_sample_lists = util.sort_file_paths(glob.glob(dataset_path + '/*.npy'))
-#     dataset_name = os.path.basename(os.path.dirname(dataset_path))
-#
-#     recon_costs = {}
-#     prev_video = None
-#
-#     sys.stdout.write("\tTesting on '%s'... [%d/%d] " % (dataset_name, i, len(dataset_paths)))
-#     for j, sample_path in enumerate(test_sample_lists, 1):
-#         sys.stdout.write("\r\tTesting on '%s'... [%d/%d] : %04d / %04d"
-#                          % (dataset_name, i, len(dataset_paths), j, len(test_sample_lists)))
-#
-#         cur_video = os.path.basename(sample_path).split('_')[1]  # expect 'video_01_000000.t7' format
-#         if prev_video != cur_video:
-#             prev_video = cur_video
-#             win_recon_cost = None
-#
-#         # data load
-#         data = torch.from_numpy(np.load(sample_path))
-#         input_batch.data.copy_(data)
-#
-#         # forward
-#         tm_forward_start = time.time()
-#         recon_batch, mu_batch, logvar_batch = model(input_batch)
-#         loss, loss_detail = our_loss.calculate(recon_batch, input_batch, saved_options, mu_batch, logvar_batch)
-#         tm_forward_consume = time.time() - tm_forward_start
-#
-#         # reconstruction cost
-#         if cur_video in recon_costs:
-#             recon_costs[cur_video].append(loss_detail['recon'])
-#         else:
-#             recon_costs[cur_video] = [loss_detail['recon']]
-#
-#         # visualization
-#         if options.display:
-#             win_images = util.draw_images(win_images, input_batch, recon_batch.data, [dataset_name])
-#             win_recon_cost = util.viz_append_line_points(win=win_recon_cost,
-#                                                          lines_dict=dict(recon=loss_detail['recon'], zero=0),
-#                                                          x_pos=len(recon_costs[cur_video]),
-#                                                          title='%s video_%s' % (dataset_name, cur_video),
-#                                                          ylabel='reconstruction cost', xlabel='sample index')
-#
-#     print("\r\tTesting on '%s'... [%d/%d] : done" % (dataset_name, i, len(dataset_paths)))
-#     print('\tSave cost files...')
-#     for (video_name, costs) in recon_costs.items():
-#         util.file_print_recon_costs(
-#             os.path.join(save_path, '%s_video_%s_%s.txt' % (dataset_name, video_name, saved_options.model)), costs)
 
 
 # ()()

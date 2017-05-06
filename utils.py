@@ -278,9 +278,7 @@ def load_metadata(metadata_path, cur_options=None):
     result_options.l2_coef = loaded_options.l2_coef
     result_options.var_loss_coef = loaded_options.var_loss_coef
 
-    result_options.batch_size = loaded_options.batch_size
     result_options.image_size = loaded_options.image_size
-
     result_options.z_size = loaded_options.z_size
 
     return train_info, result_options, loaded_options
