@@ -1,3 +1,4 @@
+import signal
 import os
 import numpy as np
 import json
@@ -28,6 +29,23 @@ def make_dir(path):
 
 def sort_file_paths(path_list):
     return sorted(path_list, key=lambda file: (os.path.dirname(file), os.path.basename(file)))
+
+
+# critical code section
+# http://stackoverflow.com/questions/842557/how-to-prevent-a-block-of-code-from-being-interrupted-by-keyboardinterrupt-in-py
+class DelayedKeyboardInterrupt(object):
+    def __enter__(self):
+        self.signal_received = False
+        self.old_handler = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, self.handler)
+
+    def handler(self, sig, frame):
+        self.signal_received = (sig, frame)
+
+    def __exit__(self, type, value, traceback):
+        signal.signal(signal.SIGINT, self.old_handler)
+        if self.signal_received:
+            self.old_handler(*self.signal_received)
 
 
 # =============================================================================
@@ -232,14 +250,16 @@ def file_print_recon_costs(path, costs, overwrite=True):
 def save_model(path, model_dict, metadata, console_print=False):
     assert isinstance(metadata, dict)
     assert isinstance(model_dict, dict)
-    # save network
-    net_path = path if path.find('.pth') != -1 else path + '.pth'
-    torch.save(model_dict, net_path)
-    # save metadata
-    metadata_path = net_path.replace('.pth', '.json')
-    save_dict_as_json_file(metadata_path, metadata)
-    if console_print:
-        print('Model is saved at ' + os.path.basename(path))
+    model_path = path if path.find('.pth') != -1 else path + '.pth'
+    meta_path = model_path.replace('.pth', '.json')
+
+    # save
+    # to prevent data corruption by keyboard interrupt, using 'DelayedKeyboardInterrupt'
+    with DelayedKeyboardInterrupt():
+        torch.save(model_dict, model_path)
+        save_dict_as_json_file(meta_path, metadata)
+        if console_print:
+            print('Model is saved at ' + os.path.basename(model_path))
 
 
 def load_metadata(metadata_path, cur_options=None):
