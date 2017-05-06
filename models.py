@@ -15,7 +15,37 @@ def weight_init(module):
         module.bias.data.fill_(0)
 
 
-# =============================================================================
+def init_model_and_loss(options, cuda=False):
+
+    # create model instance
+    if 'AE-LTR' == options.model:
+        model = AE_LTR(options.nc)
+    elif 'VAE-LTR' == options.model:
+        model = VAE_LTR(options.nc)
+    elif 'AE' == options.model:
+        model = AE(options.nc, options.nz, options.nf)
+    elif 'VAE' == options.model:
+        model = VAE(options.nc, options.nz, options.nf)
+    elif 'VAE-NARROW' == options.model:
+        model = VAE_NARROW(options.nc, options.nz)
+    assert model
+
+    if options.model_path != '':
+        model.load_state_dict(torch.load(options.model_path))
+        print(options.model + ' is loaded')
+    else:
+        print(options.model + ' is generated')
+
+    # model to CUDA
+    if cuda and torch.cuda.is_available():
+        model.cuda()
+
+    # loss
+    loss = OurLoss(cuda)
+    return model, loss
+
+
+    # =============================================================================
 # Loss function
 # =============================================================================
 class OurLoss:
@@ -24,7 +54,7 @@ class OurLoss:
         self.GAN_criteria = nn.BCELoss(size_average=False)
         # l1_regularize_criteria = nn.L1Loss(size_average=False)
         # l1_target = Variable([])
-        if cuda:
+        if cuda and torch.cuda.is_available():
             self.reconstruction_criteria.cuda()
             self.GAN_criteria.cuda()
 
@@ -84,7 +114,6 @@ class OurLoss:
         #     loss_info['l1_reg'] = l1_loss.data[0]
         #     # params.data -= options.learning_rate * params.grad.data
         #     total_loss += l1_loss
-
 
 
 # =============================================================================
@@ -215,12 +244,10 @@ class VAE_LTR(AE_LTR):  # autoencoder struction from "Learning temporal regulari
 # =============================================================================
 class AE(nn.Module):
     def __init__(self, num_in_channels, z_size=200, num_filters=64):
-
         super().__init__()
-
         self.encoder = nn.Sequential(
             # expected input: (L) x 227 x 227
-            nn.Conv2d(num_in_channels, num_filters, 5, 2, 1),
+            nn.Conv2d(num_in_channels, num_filters, 11, 4, 1),
             nn.BatchNorm2d(num_filters),
             nn.LeakyReLU(0.2, True),
             # state size: (nf) x 113 x 113
@@ -318,6 +345,81 @@ class VAE(AE):
 
     def decode(self, z):
         return self.decoder(z)
+
+    def forward(self, x):
+        mu, logvar = self.encode(x)
+        z = self.reparametrize(mu, logvar)
+        return self.decode(z), mu, logvar
+
+
+# =============================================================================
+# Variational Autoencoder [default]
+#    Follow the LTR's philosophy, but more recent architecture
+# =============================================================================
+class VAE_NARROW(nn.Module):
+    def __init__(self, num_in_channels, z_size):
+        super().__init__()
+        self.encoder = nn.Sequential(
+            # expected input: (L) x 227 x 227
+            nn.Conv2d(num_in_channels, 512, 11, 4, bias=False),
+            nn.BatchNorm2d(512),
+            nn.LeakyReLU(0.2, True),
+            # state size: (512) x 55 x 55
+            nn.Conv2d(512, 256, 7, 2, 3, bias=False),
+            nn.BatchNorm2d(256),
+            nn.LeakyReLU(0.2, True),
+            # state size: (256) x 28 x 28
+            nn.Conv2d(256, 128, 5, 2, 1, bias=False),
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(0.2, True),
+            # state size: (128) x 13 x 13
+        )
+        self.mu = nn.Conv2d(128, z_size, 13)
+        self.logvar = nn.Conv2d(128, z_size, 13)
+        # state size: (z_size) x 1 x 1
+        self.decoder = nn.Sequential(
+            # expected input: (nz) x 1 x 1
+            nn.ConvTranspose2d(z_size, 128, 13),
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(0.2, True),
+            # state size: (128) x 13 x 13
+            nn.ConvTranspose2d(128, 256, 5, 2, 1),
+            nn.BatchNorm2d(256),
+            nn.LeakyReLU(0.2, True),
+            # state size: (256) x 27 x 27
+            nn.ConvTranspose2d(256, 512, 7, 2, 2),
+            nn.BatchNorm2d(512),
+            nn.LeakyReLU(0.2, True),
+            # state size: (512) x 55 x 55
+            nn.ConvTranspose2d(512, num_in_channels, 11, 4),
+            nn.Tanh()
+            # state size: (L) x 227 x 227
+        )
+
+        # init weights
+        self.weight_init()
+
+    def encode(self, x):
+        encoding_result = self.encoder(x)
+        return self.mu(encoding_result), self.logvar(encoding_result)
+
+    def reparametrize(self, mu, logvar):
+        std = logvar.mul(0.5).exp_()  # Compute σ = exp(1/2 log σ^2)
+        if torch.cuda.is_available():
+            eps = torch.cuda.FloatTensor(std.size()).normal_()
+        else:
+            eps = torch.FloatTensor(std.size()).normal_()
+        eps = Variable(eps)
+        return eps.mul(std).add_(mu)
+
+    def decode(self, z):
+        return self.decoder(z)
+
+    def weight_init(self):
+        self.encoder.apply(weight_init)
+        self.mu.apply(weight_init)
+        self.logvar.apply(weight_init)
+        self.decoder.apply(weight_init)
 
     def forward(self, x):
         mu, logvar = self.encode(x)
