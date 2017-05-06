@@ -182,6 +182,9 @@ for i, (data, dataset_name, video_name) in enumerate(dataloader, 0):
         win_recon_cost = None
         prev_dataset_name, prev_video_name = dataset_name, video_name
 
+    # data load
+    input_batch.data.copy_(data)
+
     # forward
     recon_batch, mu_batch, logvar_batch = model(input_batch)
     loss, loss_detail = our_loss.calculate(recon_batch, input_batch, saved_options, mu_batch, logvar_batch)
