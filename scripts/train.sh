@@ -85,35 +85,33 @@ if [ ! -d $OPT_SAVE_PATH ]; then
 else
     echo "[WARNING] ${OPT_SAVE_PATH##*/} already exists. Result will be overwritten"
 fi
+#copy test script for single test and single evaluate
+cp "$main_dir_path/scripts/test_single.sh" "$OPT_SAVE_PATH/test_single.sh"
+cp "$main_dir_path/scripts/evaluate_single.sh" "$OPT_SAVE_PATH/evaluate_single.sh"
 
+# options
 if [ "$pretrained_model_path" = "" ]; then
     OPT_LOAD_MODEL=""
 else
     OPT_LOAD_MODEL="--load_model_path $pretrained_model_path"
 fi
-
-# boolean options
-# display
 if [ $display = true  ]; then
 	OPT_DISPLAY="--display --display_interval $display_interval"
 else
 	OPT_DISPLAY=""
 fi
-# print debug messages to console
 if [ $debug_print = true ]; then
 	OPT_DEBUG_PRINT="--debug_print"
 else
 	OPT_DEBUG_PRINT=""
 fi
-
-# for multi-GPU env.
 if [ "$gpu_ids" = "" ]; then
     OPT_GPU_IDS="--gpu_ids $gpu_ids"
 else
     OPT_GPU_IDS=""
 fi
 
-# options
+# option command
 OPT_STRING="--model $model --dataset $dataset --data_root $OPT_DATA_ROOT --save_path $OPT_SAVE_PATH --save_name $OPT_SAVE_NAME --epochs $epochs $OPT_DISPLAY $OPT_DEBUG_PRINT --num_gpu $num_gpu --batch_size $batch_size --save_interval $save_interval $OPT_GPU_IDS $OPT_LOAD_MODEL"
 
 #run train.py
@@ -126,10 +124,6 @@ $CMD_STRING |& tee $OPT_SAVE_PATH"/"$OPT_SAVE_NAME"_training.log"
 echo "=========================="
 echo " Training is done"
 echo "=========================="
-
-#copy test script for single test and single evaluate
-cp "$BASEDIR/test_single.sh" "$OPT_SAVE_PATH/test_single.sh"
-cp "$BASEDIR/evaluate_single.sh" "$OPT_SAVE_PATH/evaluate_single.sh"
 
 #auto test
 if [ $do_test = true ]; then	
