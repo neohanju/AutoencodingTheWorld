@@ -3,6 +3,7 @@ import os
 import random
 import time
 import torch.utils.data
+import numpy as np
 from torch.autograd import Variable
 from models import init_model_and_loss
 from data import VideoClipSets
@@ -27,6 +28,7 @@ parser.add_argument('--output_type', type=str, default='recon_costs', help='type
 # data related ----------------------------------------------------------------
 parser.add_argument('--dataset', type=str, required=True, nargs='+',
                     help="all | avenue | ped1 | ped2 | enter | exit. 'all' means using entire data")
+parser.add_argument('--videos', type=int, nargs='*', default=None, help='list of video indices to test.')
 parser.add_argument('--data_root', type=str, required=True, help='path to base folder of entire dataset')
 # display related -------------------------------------------------------------
 parser.add_argument('--display', action='store_true', default=False,
@@ -90,7 +92,7 @@ win_images = dict(
 # DATA PREPARATION
 # =============================================================================
 dataset_paths, mean_images = util.get_dataset_paths_and_mean_images(options.dataset, options.data_root, 'test')
-dataset = VideoClipSets(dataset_paths)
+dataset = VideoClipSets(dataset_paths, video_ids=options.videos)
 dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=1, shuffle=False,
                                          num_workers=1, pin_memory=True)
 
@@ -144,6 +146,7 @@ print('Start testing...')
 tm_test_start = time.time()
 
 cost_file_path = ''
+z_file_path = ''
 prev_dataset_name = ''
 prev_video_name = ''
 cnt_cost = 0
@@ -153,12 +156,22 @@ for i, (data, dataset_name, video_name) in enumerate(dataloader, 0):
     if prev_dataset_name != dataset_name or prev_video_name != video_name:
         # new video is started
         print("Testing on '%s' dataset video '%s'... " % (dataset_name, video_name))
+
+        # create new cost file
         cost_file_path = os.path.join(save_path, '%s_video_%s_%s.txt'
                                       % (dataset_name[0], video_name[0], saved_options.model))
         util.file_print_list(cost_file_path, [], overwrite=True)
-        cnt_cost = 0
+
+        # draw new cost graph
         win_recon_cost = None
+
+        # create new latent space
+        z_file_path = os.path.join(save_path, '%s_video_%s_%s_latent_variables.txt'
+                                   % (dataset_name[0], video_name[0], saved_options.model))
+        util.file_print_list(z_file_path, [], overwrite=True)
+
         prev_dataset_name, prev_video_name = dataset_name, video_name
+        cnt_cost = 0
 
     # data load
     input_batch.data.copy_(data)
@@ -172,6 +185,14 @@ for i, (data, dataset_name, video_name) in enumerate(dataloader, 0):
 
     print('%s_video_%s:%04d, cost = %.3f' % (dataset_name[0], video_name[0], cnt_cost, cur_cost))
 
+    # save cost
+    util.file_print_list(cost_file_path, [cur_cost], overwrite=False)
+
+    # save latent variables
+    np_mu = mu_batch.data[0,:,0,0].cpu().numpy()
+    np_sig = np.exp(0.5 * logvar_batch.data[0,:,0,0].cpu().numpy())
+    util.file_print_list(z_file_path, np_mu.tolist(), False)
+
     # visualization
     if options.display:
         win_images = util.draw_images(win_images, input_batch, recon_batch.data, dataset_name)
@@ -181,9 +202,6 @@ for i, (data, dataset_name, video_name) in enumerate(dataloader, 0):
                                                      title='%s: video_%s' % (dataset_name[0], video_name[0]),
                                                      ylabel='reconstruction cost', xlabel='sample index')
         time.sleep(0.005)  # for reliable drawing
-
-    # save cost
-    util.file_print_list(cost_file_path, [cur_cost], overwrite=False)
 
 
 # ()()

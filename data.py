@@ -5,9 +5,12 @@ import numpy as np
 
 
 class VideoClipSets(torch.utils.data.Dataset):
-    def __init__(self, paths, centered=False, num_input_channel=10):
+    def __init__(self, paths, centered=False, num_input_channel=10, video_ids=None):
         # paths can be a single string ar an array of strings about paths that contain data samples right below
         super().__init__()
+
+        if video_ids is not None:
+            assert(isinstance(video_ids, list))
 
         self.centered = centered
 
@@ -22,6 +25,7 @@ class VideoClipSets(torch.utils.data.Dataset):
         self.dataset_names = []
         self.video_names = []
         self.mean_images = {}  # save negative mean images for saving computations
+        include_file_path = []
         for path in self.paths:
             assert os.path.exists(path)
 
@@ -33,14 +37,18 @@ class VideoClipSets(torch.utils.data.Dataset):
                 # expect naming format 'avenue_video_01_frame_interval_1_stride_2_000000.npy'
                 name_splits = os.path.basename(file_path).split('_')
                 cur_dataset_name, cur_video_name = name_splits[0], name_splits[2]
-                self.dataset_names += [cur_dataset_name]
-                self.video_names += [cur_video_name]
+
+                if video_ids is None or int(cur_video_name) in video_ids:
+                    include_file_path += [file_path]
+                    self.dataset_names += [cur_dataset_name]
+                    self.video_names += [cur_video_name]
 
             if not self.centered:
                 # make cube with mean image
                 mean_image = np.load(os.path.join(os.path.dirname(path), 'mean_image.npy'))
                 mean_image_cube = mean_image[np.newaxis, :, :].repeat(num_input_channel, axis=0)
                 self.mean_images[cur_dataset_name] = torch.FloatTensor(mean_image_cube)
+        self.file_paths = include_file_path
 
         # sort samples by file names
         idx_path_pairs = [pair for pair in enumerate(self.file_paths, 0)]

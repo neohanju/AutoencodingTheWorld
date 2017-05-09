@@ -339,8 +339,8 @@ for epoch in range(options.epochs):
         # draw graphs
         win_loss = util.viz_append_line_points(win_loss, loss_info_vis, epoch)
         win_time = util.viz_append_line_points(win_time, time_info_vis, epoch,
-                                               title='times at each iteration',
-                                               ylabel='time', xlabel='iterations')
+                                               title='times at each epoch',
+                                               ylabel='time')
         # reset buffers
         loss_info_vis = dict.fromkeys(loss_info_vis, 0)
         time_info_vis = dict.fromkeys(time_info_vis, 0)

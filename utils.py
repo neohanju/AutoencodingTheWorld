@@ -143,7 +143,7 @@ def draw_images_GAN(win_dict, fake, best_indexes):
 
 
 def viz_append_line_points(win, lines_dict, x_pos, title='losses at each iteration', ylabel='loss',
-                           xlabel='iterations'):
+                           xlabel='number of epochs'):
     y_len = len(lines_dict.keys())
     assert y_len > 0
     if 1 == y_len:
@@ -235,14 +235,16 @@ def dict_to_namespace(input_dict):
 # =============================================================================
 # FILE I/O
 # =============================================================================
-def file_print_recon_costs(path, costs, overwrite=True):
+def file_print_list(path, out_list, overwrite=True):
     # path : file path
-    # costs : list of reconstruction costs
+    # out_list : list of output values
     open_mode = "w" if overwrite else "a"
     fo = open(path, open_mode)
-    for cost in costs:
-        assert isinstance(cost, float)
-        fo.write('%.18e\n' % cost)
+    for val in out_list:
+        assert isinstance(val, float)
+        fo.write('%.18e,' % val)
+    if len(out_list) > 0:
+        fo.write('\n')
     fo.close()
     return
 
