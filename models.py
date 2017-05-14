@@ -48,6 +48,33 @@ def init_model_and_loss(options, cuda=False):
     # =============================================================================
 # Loss function
 # =============================================================================
+class EBCAELoss:
+    def __init__(self, cuda=False):
+        self.reconstruction_criteria = nn.MSELoss(size_average=False)
+        if cuda and torch.cuda.is_available():
+            self.reconstruction_criteria.cuda()
+
+    def calculate(self, recon_x, x, options, mu=None, logvar=None):
+        # thanks to Autograd, you can train the net by just summing-up all losses and propagating them
+        size_mini_batch = x.data.size()[0]
+        recon_loss = self.reconstruction_criteria(recon_x, x).div_(size_mini_batch)
+        total_loss = recon_loss
+        loss_info = {'recon': recon_loss.data[0]}
+
+        if options.variational:
+            assert mu is not None and logvar is not None
+            # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+            kld_element = mu.pow(2).add_(logvar.exp()).mul_(-1).add_(1).add_(logvar)
+            kld_loss = torch.sum(kld_element).mul_(-0.5)
+            kld_loss_final = kld_loss.div_(size_mini_batch).mul_(options.var_loss_coef)
+            loss_info['variational'] = kld_loss_final.data[0]
+            total_loss += kld_loss_final
+
+        loss_info['total'] = total_loss.data[0]
+
+        return total_loss, loss_info
+
+
 class OurLoss:
     def __init__(self, cuda=False):
         self.reconstruction_criteria = nn.MSELoss(size_average=False)
