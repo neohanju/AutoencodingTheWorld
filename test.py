@@ -7,6 +7,7 @@ from torch.autograd import Variable
 from models import init_model_and_loss
 from data import VideoClipSets
 import utils as util
+import numpy as np
 
 
 def debug_print(arg):
@@ -106,7 +107,7 @@ diff_paths = dict()
 mean_cubes = {}
 for i, path in enumerate(dataset_paths, 0):
     setname = options.dataset[i]
-    mean_cubes[setname] = util.make_cube_with_single_frame(mean_images[setname])
+    mean_cubes[setname] = util.make_cube_with_single_frame(mean_images[setname], saved_options.nc)
     diff_paths[setname] = os.path.join(os.path.dirname(path), 'diff')
     util.make_dir(diff_paths[setname])
 
@@ -114,8 +115,8 @@ for i, path in enumerate(dataset_paths, 0):
 tm_buffer_set = time.time()
 input_batch = torch.FloatTensor(1, saved_options.nc, saved_options.image_size, saved_options.image_size)
 recon_batch = torch.FloatTensor(1, saved_options.nc, saved_options.image_size, saved_options.image_size)
-mu_batch = torch.FloatTensor(1, options.z_size[0], options.z_size[1], options.z_size[2])
-logvar_batch = torch.FloatTensor(1, options.z_size[0], options.z_size[1], options.z_size[2])
+mu_batch = torch.FloatTensor(1, saved_options.z_size[0], saved_options.z_size[1], saved_options.z_size[2])
+logvar_batch = torch.FloatTensor(1, saved_options.z_size[0], saved_options.z_size[1], saved_options.z_size[2])
 debug_print('Stream buffers are set: %.3f sec elapsed' % (time.time() - tm_buffer_set))
 
 if cuda_available:
@@ -194,12 +195,12 @@ for i, (data, dataset_name, video_name, file_name) in enumerate(dataloader, 0):
 
     # save error samples
     if loss_detail['recon'] >= options.max_mse:
-        batch_diff = input_batch.data.cpu() - recon_batch.data.cpu()
-        for diff_idx in range(batch_diff.size()[0]):
+        batch_diff = (input_batch.data.cpu().numpy() - recon_batch.data.cpu().numpy()) * 255
+        for diff_idx in range(1):
             setname = dataset_name[diff_idx]
-            diff_path = os.path.join(diff_paths[setname], file_name[setname])
-            diff_sample = (batch_diff[diff_idx, :, :, :] * 255 + mean_cubes[setname])
-
+            diff_path = os.path.join(diff_paths[setname], file_name[diff_idx])
+            diff_sample = batch_diff[diff_idx, :, :, :] + mean_cubes[setname]
+            np.save(diff_path, diff_sample.astype(np.uint8))
 
     # save cost
     util.file_print_list(cost_file_path, [cur_cost], overwrite=False)

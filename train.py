@@ -254,7 +254,7 @@ if options.continue_train:
 # main loop of training
 for epoch in range(options.epochs):
     tm_cur_epoch_start = tm_cur_iter_start = time.time()
-    for i, (data, setname, _) in enumerate(dataloader, 1):
+    for i, (data, setname, _, _) in enumerate(dataloader, 1):
         num_iters_in_epoch = i
 
         # ============================================
