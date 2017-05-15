@@ -28,7 +28,7 @@ class VideoClipSets(torch.utils.data.Dataset):
         self.mean_images = {}
         self.num_samples = 0
 
-        self.refreshSampleInfo()
+        self.refresh_sample_info()
 
     def __len__(self):
         return self.num_samples
@@ -42,15 +42,18 @@ class VideoClipSets(torch.utils.data.Dataset):
             data.div_(255)
         return data, self.dataset_names[item], self.video_names[item], os.path.basename(self.file_paths[item])
 
-    def addPath(self, path):
+    def add_path(self, path):
         # check path in path list
-        self.refreshSampleInfo()
+        assert os.path.exists(path)
+        self.paths.append(path)
+        self.refresh_sample_info()
 
-    def removePath(self, path):
-        # check path in path list
-        self.refreshSampleInfo()
+    def remove_path(self, path):
+        if path in self.paths:
+            self.paths.remove(path)
+            self.refresh_sample_info()
 
-    def refreshSampleInfo(self):
+    def refresh_sample_info(self):
         # get file paths
         self.file_paths = []
         self.dataset_names = []

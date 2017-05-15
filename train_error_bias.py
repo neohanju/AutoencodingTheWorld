@@ -9,7 +9,8 @@ from torch.autograd import Variable
 from models import init_model_and_loss
 from data import VideoClipSets
 import utils as util
-
+import numpy as np
+import matplotlib.pyplot as plt
 
 def debug_print(arg):
     if not options.debug_print:
@@ -32,8 +33,9 @@ parser.add_argument('--var_loss_coef', type=float, default=1.0, help='balancing 
 # training related ------------------------------------------------------------
 parser.add_argument('--model_path', type=str, default='', help='path of pretrained network. default=""')
 parser.add_argument('--batch_size', type=int, default=64, help='input batch size. default=64')
-parser.add_argument('--epochs', type=int, default=10, help='number of epochs to train for. default=25')
-parser.add_argument('--max_iter', type=int, default=150000, help='number of iterations to train for. default=150,000')
+parser.add_argument('--epochs', type=int, default=50, help='number of epochs to train for. default=25')
+parser.add_argument('--max_iter', type=int, default=1, help='number of iterations to train for. default=150,000')
+parser.add_argument('--max_mse', type=float, default=500, help='threshold of MSE to generate diff samples. default=500')
 # data related ----------------------------------------------------------------
 parser.add_argument('--dataset', type=str, required=True, nargs='+',
                     help="all | avenue | ped1 | ped2 | enter | exit. 'all' means using entire data")
@@ -161,11 +163,24 @@ win_images = dict(
 # set data loader
 dataset_paths, mean_images = util.get_dataset_paths_and_mean_images(options.dataset, options.data_root, 'train')
 dataset = VideoClipSets(dataset_paths, centered=False)
-dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=True,
-                                         num_workers=options.workers)
 for path in dataset_paths:
     print("Dataset from '%s'" % path)
-debug_print('Data loader is ready')
+debug_print('Dataset is ready')
+
+# for utility library
+util.target_sample_index = 0
+util.target_frame_index = int(options.nc / 2)
+util.mean_images = mean_images
+debug_print('Utility library is ready')
+
+# for generating diff. samples
+diff_paths = dict()
+mean_cubes = {}
+for i, path in enumerate(dataset_paths, 0):
+    setname = options.dataset[i]
+    mean_cubes[setname] = util.make_cube_with_single_frame(mean_images[setname], options.nc)
+    diff_paths[setname] = os.path.join(os.path.dirname(path), 'diff')
+    util.make_dir(diff_paths[setname])
 
 # streaming buffer
 tm_buffer_set = time.time()
@@ -175,6 +190,9 @@ mu_batch = torch.FloatTensor(options.batch_size, options.z_size[0], options.z_si
 logvar_batch = torch.FloatTensor(options.batch_size, options.z_size[0], options.z_size[1], options.z_size[2])
 debug_print('Stream buffers are set: %.3f sec elapsed' % (time.time() - tm_buffer_set))
 
+num_pixels = options.nc * options.image_size * options.image_size
+
+# GPU
 if cuda_available:
     debug_print('Start transferring to CUDA')
     tm_gpu_start = time.time()
@@ -184,6 +202,7 @@ if cuda_available:
     logvar_batch = logvar_batch.cuda()
     debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
 
+# Variables
 tm_to_variable = time.time()
 input_batch = Variable(input_batch)
 recon_batch = Variable(recon_batch)
@@ -192,18 +211,50 @@ print('input_batch:', input_batch.size())
 print('recon_batch:', recon_batch.size())
 debug_print('Data streaming is ready')
 
-# for utility library
-util.target_sample_index = 0
-util.target_frame_index = int(options.nc / 2)
-util.mean_images = mean_images
-debug_print('Utility library is ready')
-
-
-# =============================================================================
-# MODEL & LOSS FUNCTION
-# =============================================================================
+# model & loss
 model, our_loss = init_model_and_loss(options, cuda_available)
 print(model)
+
+# optimizer
+model_params = model.parameters()
+if 'adagrad' == options.optimizer:
+    optimizer = optim.Adagrad(model_params, lr=options.learning_rate, lr_decay=options.learning_rate_decay,
+                              weight_decay=options.l2_coef)
+elif 'adam' == options.optimizer:
+    optimizer = optim.Adam(model_params, lr=options.learning_rate, betas=(options.beta1, 0.999),
+                           weight_decay=options.l2_coef)
+elif 'asgd' == options.optimizer:
+    optimizer = optim.ASGD(model_params, lr=options.learning_rate, weight_decay=options.l2_coef)
+elif 'sgd' == options.optimizer:
+    optimizer = optim.SGD(model_params, lr=options.learning_rate, weight_decay=options.l2_coef)
+assert optimizer
+
+# timer related
+tm_data_load_total = 0
+tm_iter_total = 0
+tm_loop_start = time.time()
+time_info = dict(cur_iter=0, train=0, visualize=0, ETC=0)
+time_info_vis = dict()
+
+# counters
+iter_count = 0
+recent_loss = 0
+num_iters_in_epoch = 0
+
+# for logging
+loss_info = dict()
+loss_info_vis = dict()
+train_info = dict(model=options.model, dataset=options.dataset, epoch_count=0, iter_count=0, total_loss=0,
+                  options=options_dict)
+if options.continue_train:
+    train_info['prev_epoch_count'] = prev_train_info['epoch_count']
+    train_info['prev_iter_count'] = prev_train_info['iter_count']
+    train_info['prev_total_loss'] = prev_train_info['total_loss']
+    if 'prev_epoch_count' in prev_train_info:  # this means that the meta data already has previous training info.
+        # accumulate counters
+        train_info['prev_epoch_count'] += prev_train_info['prev_epoch_count']
+        train_info['prev_iter_count'] += prev_train_info['prev_iter_count']
+
 
 for iter in range(options.max_iter):
 
@@ -211,87 +262,80 @@ for iter in range(options.max_iter):
     # ERROR SAMPLE GENERATION
     # =============================================================================
     print('Generate error sample')
+    for path in diff_paths.values():
+        dataset.remove_path(path)
+    dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=False,
+                                             num_workers=options.workers)
+
+    mse_threshold = options.max_mse
+    mse_threshold_per_pixel = mse_threshold / num_pixels
+
+    print('Start testing...')
     model.eval()
+    num_error_samples = 0
+    for i, (data, setname, _, filename) in enumerate(dataloader, 1):
+
+        time_iter_start = time.time()
+
+        # feed data
+        if data.size() != input_batch.data.size():
+            input_batch.data.resize_(data.size())
+            recon_batch.data.resize_(data.size())
+        input_batch.data.copy_(data)
+
+        # forward
+        recon_batch, mu_batch, logvar_batch = model(input_batch)
+
+        time_sample_generation_start = time.time()
+        # save error samples
+        num_cur_gen_samples = 0
+        diff_batch = recon_batch.sub_(input_batch).pow(2)
+        for diff_idx in range(input_batch.data.size()[0]):
+            diff_map = diff_batch.data[diff_idx, :, :, :].cpu().numpy()
+            cur_mse = np.sum(diff_map)
+            if cur_mse > mse_threshold:
+                # masking well reconstructed pixels
+                cur_input = input_batch.data[diff_idx, :, :, :].cpu().numpy()
+                cur_input[diff_map < mse_threshold_per_pixel] = 0
+                new_sample = cur_input * 255 + mean_cubes[setname[diff_idx]]
+                diff_path = os.path.join(diff_paths[setname[diff_idx]], filename[diff_idx])
+                # plt.imshow(new_sample[5, :, :], cmap='gray')
+                # plt.show()
+                np.save(diff_path, new_sample.astype(np.uint8))
+                num_cur_gen_samples += 1
+        time_consume_sample_generation = time.time() - time_sample_generation_start
+        time_consume_iter = time.time() - time_iter_start
+
+        num_error_samples += num_cur_gen_samples
+
+        print('[%3d/%3d] Time elapsed: %.3f, for %d sample generation: %.3f (%.1f percent), total %d samples'
+              % (i, len(dataloader), time_consume_iter, num_cur_gen_samples, time_consume_sample_generation,
+                 100 * time_consume_sample_generation / time_consume_iter, num_error_samples))
+    print('Total %d error samples are generated' % num_error_samples)
 
     # =============================================================================
-    # DATA PREPARATION
+    # NETWORK TRAINING
     # =============================================================================
-    dataset_paths, _ = util.get_dataset_paths_and_mean_images(options.dataset, options.data_root, 'test')
-    dataset = VideoClipSets(dataset_paths)
-    dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=1, shuffle=False,
-                                             num_workers=1, pin_memory=True)
+    for path in diff_paths.values():
+        print(path)
+        dataset.add_path(path)
+    dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=True,
+                                             num_workers=options.workers, pin_memory=True)
 
-    # streaming buffer
-    input_batch.resize(1, options.nc, options.image_size, options.image_size)
-    recon_batch.resize(1, options.nc, options.image_size, options.image_size)
-
-
-
-    # =============================================================================
-    # TRAINING
-    # =============================================================================
     print('Start training...')
     model.train()
-
-    # optimizer
-    model_params = model.parameters()
-    if 'adagrad' == options.optimizer:
-        optimizer = optim.Adagrad(model_params, lr=options.learning_rate, lr_decay=options.learning_rate_decay,
-                                  weight_decay=options.l2_coef)
-    elif 'adam' == options.optimizer:
-        optimizer = optim.Adam(model_params, lr=options.learning_rate, betas=(options.beta1, 0.999),
-                               weight_decay=options.l2_coef)
-    elif 'asgd' == options.optimizer:
-        optimizer = optim.ASGD(model_params, lr=options.learning_rate, weight_decay=options.l2_coef)
-    elif 'sgd' == options.optimizer:
-        optimizer = optim.SGD(model_params, lr=options.learning_rate, weight_decay=options.l2_coef)
-    assert optimizer
-
-    # timer related
-    tm_data_load_total = 0
-    tm_iter_total = 0
-    tm_loop_start = time.time()
-    time_info = dict(cur_iter=0, train=0, visualize=0, ETC=0)
-    time_info_vis = dict()
-
-    # counters
-    iter_count = 0
-    recent_loss = 0
-    num_iters_in_epoch = 0
-
-    # for logging
-    loss_info = dict()
-    loss_info_vis = dict()
-    train_info = dict(model=options.model, dataset=options.dataset, epoch_count=0, iter_count=0, total_loss=0,
-                      options=options_dict)
-    if options.continue_train:
-        train_info['prev_epoch_count'] = prev_train_info['epoch_count']
-        train_info['prev_iter_count'] = prev_train_info['iter_count']
-        train_info['prev_total_loss'] = prev_train_info['total_loss']
-        if 'prev_epoch_count' in prev_train_info:  # this means that the meta data already has previous training info.
-            # accumulate counters
-            train_info['prev_epoch_count'] += prev_train_info['prev_epoch_count']
-            train_info['prev_iter_count'] += prev_train_info['prev_iter_count']
-
     # main loop of training
     for epoch in range(options.epochs):
         tm_cur_epoch_start = tm_cur_iter_start = time.time()
-        for i, (data, setname, _) in enumerate(dataloader, 1):
+        for i, (data, setname, _, _) in enumerate(dataloader, 1):
             num_iters_in_epoch = i
 
-            # ============================================
-            # DATA FEED
-            # ============================================
+            # feed data
             if data.size() != input_batch.data.size():
-                # input_batch.data.resize_(data.size())
-                # recon_batch.data.resize_(data.size())
-                # this will be deprecated by 'last_drop' attributes of dataloader
-                continue
+                input_batch.data.resize_(data.size())
+                recon_batch.data.resize_(data.size())
             input_batch.data.copy_(data)
 
-            # ============================================
-            # TRAIN
-            # ============================================
             # forward
             tm_train_start = time.time()
             model.zero_grad()
@@ -339,7 +383,7 @@ for iter in range(options.max_iter):
             time_info['ETC'] += tm_etc_consume
             time_info['visualize'] += tm_visualize_consume
             # ===============================================
-            tm_cur_iter_start = time.time()  # to measure the time of enumeration of the loop controller, set timer at here
+            tm_cur_iter_start = time.time()
             iter_count += 1
 
         average_loss_info = {key: value / num_iters_in_epoch for key, value in loss_info.items()}
