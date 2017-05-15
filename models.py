@@ -51,27 +51,47 @@ def init_model_and_loss(options, cuda=False):
 class EBCAELoss:
     def __init__(self, cuda=False):
         self.reconstruction_criteria = nn.MSELoss(size_average=False)
+        self.cluster_criteria = nn.KLDivLoss(size_average=False)
         if cuda and torch.cuda.is_available():
             self.reconstruction_criteria.cuda()
+            self.cluster_criteria.cuda()
 
-    def calculate(self, recon_x, x, options, mu=None, logvar=None):
-        # thanks to Autograd, you can train the net by just summing-up all losses and propagating them
+    def calculate(self, recon_x, x, z, cluster_mus, alpha, options):
+        # recon_x
+        # x
+        # z
+        # cluster_mus : N x (M x 1), N is the number of clusters
+        # alpha : for soft assignment
         size_mini_batch = x.data.size()[0]
+        num_clusters = cluster_mus.size()[0]
+
+        # reconstruction loss
         recon_loss = self.reconstruction_criteria(recon_x, x).div_(size_mini_batch)
         total_loss = recon_loss
         loss_info = {'recon': recon_loss.data[0]}
 
-        if options.variational:
-            assert mu is not None and logvar is not None
-            # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
-            kld_element = mu.pow(2).add_(logvar.exp()).mul_(-1).add_(1).add_(logvar)
-            kld_loss = torch.sum(kld_element).mul_(-0.5)
-            kld_loss_final = kld_loss.div_(size_mini_batch).mul_(options.var_loss_coef)
-            loss_info['variational'] = kld_loss_final.data[0]
-            total_loss += kld_loss_final
+        # clustering loss
+        if 0 < num_clusters:
+
+            q_i = torch.FloatTensor(z.data.size()[0], z_data.size()[1], z_data.size()[2], num_clusters)
+            for j in range(num_clusters):
+                q_i[:, :, :, j] = z.add_(-cluster_mus[j]).pow(2).div_(alpha).add_(1).pow(-(alpha+1)/2)
+
+
+            cluster_loss = self.cluster_criteria(P, Q)
+            loss_info['clustering'] = cluster_loss.data[0]
+            total_loss += cluster_loss
+
+        # if options.variational:
+        #     assert mu is not None and logvar is not None
+        #     # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+        #     kld_element = mu.pow(2).add_(logvar.exp()).mul_(-1).add_(1).add_(logvar)
+        #     kld_loss = torch.sum(kld_element).mul_(-0.5)
+        #     kld_loss_final = kld_loss.div_(size_mini_batch).mul_(options.var_loss_coef)
+        #     loss_info['variational'] = kld_loss_final.data[0]
+        #     total_loss += kld_loss_final
 
         loss_info['total'] = total_loss.data[0]
-
         return total_loss, loss_info
 
 
