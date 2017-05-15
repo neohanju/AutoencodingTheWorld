@@ -26,11 +26,11 @@
 
 
 # enter option
-model="VAE-NARROW"
+model="AE-LTR"
 dataset="avenue"  # avenue | ped1 | ped2 | enter | exit, and also supports 'all'
 batch_size="120"
-epochs="1000"
-save_interval="50"
+epochs="10"
+save_interval="10"
 num_gpu="1"
 gpu_ids=""
 pretrained_model_path=""

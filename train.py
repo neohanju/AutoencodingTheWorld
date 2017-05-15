@@ -24,7 +24,7 @@ parser = argparse.ArgumentParser(description='Detecting abnormal behavior in vid
 # model related ---------------------------------------------------------------
 parser.add_argument('--model', type=str, default='VAE', help='AE | AE-LTR | VAE | VAE-LTR | VAE-NARROW')
 parser.add_argument('--nc', type=int, default=10, help='number of input channel. default=10')
-parser.add_argument('--nz', type=int, default=200, help='size of the latent z vector. default=100')
+parser.add_argument('--nz', type=int, default=10, help='size of the latent z vector. default=100')
 parser.add_argument('--nf', type=int, default=64, help='size of lowest image filters. default=64')
 parser.add_argument('--l1_coef', type=float, default=0, help='coef of L1 regularization on the weights. default=0')
 parser.add_argument('--l2_coef', type=float, default=0, help='coef of L2 regularization on the weights. default=0')
@@ -89,7 +89,7 @@ options.variational = options.model.find('VAE') != -1
 
 # latent space size
 if options.model.find('-LTR') != -1:
-    options.z_size = [128, 13, 13]
+    options.z_size = [options.nz, 13, 13]
 else:
     options.z_size = [options.nz, 1, 1]
 

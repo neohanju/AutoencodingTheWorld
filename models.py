@@ -19,7 +19,7 @@ def init_model_and_loss(options, cuda=False):
 
     # create model instance
     if 'AE-LTR' == options.model:
-        model = AE_LTR(options.nc)
+        model = AE_LTR(options.nc, options.nz)
     elif 'VAE-LTR' == options.model:
         model = VAE_LTR(options.nc)
     elif 'AE' == options.model:
@@ -167,7 +167,7 @@ class OurLoss:
 # Autoencoder [original]
 # =============================================================================
 class AE_LTR(nn.Module):  # autoencoder struction from "Learning temporal regularity in video sequences"
-    def __init__(self, num_in_channels, num_filters=512):
+    def __init__(self, num_in_channels, num_filters=512, z_size=128):
 
         super().__init__()
 
@@ -182,12 +182,12 @@ class AE_LTR(nn.Module):  # autoencoder struction from "Learning temporal regula
         # (batch_size) x 256 x 27 x 27
         self.pool2 = nn.MaxPool2d(2, stride=2, return_indices=True)
         # (batch_size) x 256 x 13 x 13
-        self.conv3 = nn.Conv2d(int(num_filters / 2), int(num_filters / 4), 3, 1, 1)
+        self.conv3 = nn.Conv2d(int(num_filters / 2), z_size, 3, 1, 1)
         self.encode_act3 = nn.Tanh()
         # (batch_size) x 128 x 13 x 13
 
         # decoder layers
-        self.deconv1 = nn.ConvTranspose2d(int(num_filters / 4), int(num_filters / 2), 3, 1, 1)
+        self.deconv1 = nn.ConvTranspose2d(z_size, int(num_filters / 2), 3, 1, 1)
         self.decode_act1 = nn.Tanh()
         # (batch_size) x 256 x 13 x 13
         self.unpool1 = nn.MaxUnpool2d(2, stride=2)
