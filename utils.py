@@ -322,5 +322,9 @@ def formatted_time(time_sec):
 def now_to_string():
     return strftime("%Y%m%d-%H%M%S", gmtime())
 
+
+def make_cube_with_single_frame(frame, nc):
+    return frame[np.newaxis, :, :].repeat(nc, axis=0)
+
 # ()()
 # ('') HAANJU.YOO

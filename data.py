@@ -19,7 +19,38 @@ class VideoClipSets(torch.utils.data.Dataset):
         if not isinstance(self.paths, list):
             self.paths = [self.paths]
         self.num_dataset = len(self.paths)
+        self.num_input_channel = num_input_channel
+        self.video_ids = video_ids
 
+        self.file_paths = []
+        self.dataset_names = []
+        self.video_names = []
+        self.mean_images = {}
+        self.num_samples = 0
+
+        self.refreshSampleInfo()
+
+    def __len__(self):
+        return self.num_samples
+
+    def __getitem__(self, item):
+        if self.centered:
+            data = torch.FloatTensor(np.load(self.file_paths[item]))
+        else:
+            data = torch.ByteTensor(np.load(self.file_paths[item])).float()
+            data = data - self.mean_images[self.dataset_names[item]]
+            data.div_(255)
+        return data, self.dataset_names[item], self.video_names[item], os.path.basename(self.file_paths[item])
+
+    def addPath(self, path):
+        # check path in path list
+        self.refreshSampleInfo()
+
+    def removePath(self, path):
+        # check path in path list
+        self.refreshSampleInfo()
+
+    def refreshSampleInfo(self):
         # get file paths
         self.file_paths = []
         self.dataset_names = []
@@ -38,7 +69,7 @@ class VideoClipSets(torch.utils.data.Dataset):
                 name_splits = os.path.basename(file_path).split('_')
                 cur_dataset_name, cur_video_name = name_splits[0], name_splits[2]
 
-                if video_ids is None or int(cur_video_name) in video_ids:
+                if self.video_ids is None or int(cur_video_name) in self.video_ids:
                     include_file_path += [file_path]
                     self.dataset_names += [cur_dataset_name]
                     self.video_names += [cur_video_name]
@@ -46,7 +77,7 @@ class VideoClipSets(torch.utils.data.Dataset):
             if not self.centered:
                 # make cube with mean image
                 mean_image = np.load(os.path.join(os.path.dirname(path), 'mean_image.npy'))
-                mean_image_cube = mean_image[np.newaxis, :, :].repeat(num_input_channel, axis=0)
+                mean_image_cube = mean_image[np.newaxis, :, :].repeat(self.num_input_channel, axis=0)
                 self.mean_images[cur_dataset_name] = torch.FloatTensor(mean_image_cube)
         self.file_paths = include_file_path
 
@@ -61,17 +92,7 @@ class VideoClipSets(torch.utils.data.Dataset):
         self.num_samples = len(self.file_paths)
         assert self.num_samples > 0
 
-    def __len__(self):
-        return self.num_samples
 
-    def __getitem__(self, item):
-        if self.centered:
-            data = torch.FloatTensor(np.load(self.file_paths[item]))
-        else:
-            data = torch.ByteTensor(np.load(self.file_paths[item])).float()
-            data = data - self.mean_images[self.dataset_names[item]]
-            data.div_(255)
-        return data, self.dataset_names[item], self.video_names[item]
 
 # ()()
 # ('')HAANJU.YOO
