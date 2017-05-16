@@ -53,6 +53,11 @@ class VideoClipSets(torch.utils.data.Dataset):
             self.paths.remove(path)
             self.refresh_sample_info()
 
+    def generate_mean_cubes(self, path, dataset_name):
+        mean_image = np.load(os.path.join(os.path.dirname(path), 'mean_image.npy'))
+        mean_image_cube = mean_image[np.newaxis, :, :].repeat(self.num_input_channel, axis=0)
+        self.mean_images[dataset_name] = torch.FloatTensor(mean_image_cube)
+
     def refresh_sample_info(self):
         # get file paths
         self.file_paths = []
@@ -79,9 +84,7 @@ class VideoClipSets(torch.utils.data.Dataset):
 
             if not self.centered:
                 # make cube with mean image
-                mean_image = np.load(os.path.join(os.path.dirname(path), 'mean_image.npy'))
-                mean_image_cube = mean_image[np.newaxis, :, :].repeat(self.num_input_channel, axis=0)
-                self.mean_images[cur_dataset_name] = torch.FloatTensor(mean_image_cube)
+                self.generate_mean_cubes(path, cur_dataset_name)
         self.file_paths = include_file_path
 
         # sort samples by file names
@@ -95,6 +98,15 @@ class VideoClipSets(torch.utils.data.Dataset):
         self.num_samples = len(self.file_paths)
         assert self.num_samples > 0
 
+
+class OpticalFlowSets(VideoClipSets):
+    def __init__(self, paths, centered=False, num_input_channel=18, video_ids=None):
+        # paths can be a single string ar an array of strings about paths that contain data samples right below
+        super().__init__(paths, centered, num_input_channel, video_ids)
+
+    def generate_mean_cubes(self, path, dataset_name):
+        mean_cube = np.load(os.path.join(os.path.dirname(path), 'mean_cube.npy'))
+        self.mean_images[dataset_name] = torch.FloatTensor(mean_cube)
 
 
 # ()()
