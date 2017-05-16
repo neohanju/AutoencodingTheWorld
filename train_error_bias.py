@@ -33,9 +33,9 @@ parser.add_argument('--var_loss_coef', type=float, default=1.0, help='balancing 
 # training related ------------------------------------------------------------
 parser.add_argument('--model_path', type=str, default='', help='path of pretrained network. default=""')
 parser.add_argument('--batch_size', type=int, default=64, help='input batch size. default=64')
-parser.add_argument('--epochs', type=int, default=50, help='number of epochs to train for. default=25')
+parser.add_argument('--epochs', type=int, default=100, help='number of epochs to train for. default=25')
 parser.add_argument('--max_iter', type=int, default=1, help='number of iterations to train for. default=150,000')
-parser.add_argument('--max_mse', type=float, default=500, help='threshold of MSE to generate diff samples. default=500')
+parser.add_argument('--max_mse', type=float, default=200, help='threshold of MSE to generate diff samples. default=500')
 # data related ----------------------------------------------------------------
 parser.add_argument('--dataset', type=str, required=True, nargs='+',
                     help="all | avenue | ped1 | ped2 | enter | exit. 'all' means using entire data")
