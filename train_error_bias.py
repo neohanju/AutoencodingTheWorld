@@ -67,7 +67,7 @@ parser.add_argument('--save_name', type=str, default='', help='name for network 
 parser.add_argument('--random_seed', type=int, help='manual seed')
 parser.add_argument('--debug_print', action='store_true', default=False, help='print debug information')
 # -----------------------------------------------------------------------------
-parser.add_argument('--only_diff', type=int, help='use only diff dataset')
+parser.add_argument('--only_diff', type=int, help='use only diff dataset', default=True)
 options = parser.parse_args()
 
 # seed

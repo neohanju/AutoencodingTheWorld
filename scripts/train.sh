@@ -29,11 +29,11 @@
 model="AE-LTR"
 dataset="avenue"  # avenue | ped1 | ped2 | enter | exit, and also supports 'all'
 batch_size="120"
-epochs="10"
+epochs="100"
 save_interval="10"
 num_gpu="1"
 gpu_ids=""
-pretrained_model_path=""
+pretrained_model_path="/home/mlpa/Workspace/github/VAE_4_DET_AB/training_result/AE-LTR_20170515-220114_avenue_mlpa-titan/AE-LTR_20170515-220114_avenue_mlpa-titan_epoch_900.pth"
 #pretrained_model_path="/home/neohanju/Workspace/Github/VAE_regularization/training_result/VAE_20170501-002802_avenue-ped1-ped2-enter-exit_Ace/VAE_20170501-002802_avenue-ped1-ped2-enter-exit_Ace_latest.pth"
 
 display=true
@@ -93,7 +93,7 @@ cp "$main_dir_path/scripts/evaluate_single.sh" "$OPT_SAVE_PATH/evaluate_single.s
 if [ "$pretrained_model_path" = "" ]; then
     OPT_LOAD_MODEL=""
 else
-    OPT_LOAD_MODEL="--load_model_path $pretrained_model_path"
+    OPT_LOAD_MODEL="--model_path $pretrained_model_path"
 fi
 if [ $display = true  ]; then
 	OPT_DISPLAY="--display --display_interval $display_interval"
@@ -115,7 +115,7 @@ fi
 OPT_STRING="--model $model --dataset $dataset --data_root $OPT_DATA_ROOT --save_path $OPT_SAVE_PATH --save_name $OPT_SAVE_NAME --epochs $epochs $OPT_DISPLAY $OPT_DEBUG_PRINT --num_gpu $num_gpu --batch_size $batch_size --save_interval $save_interval $OPT_GPU_IDS $OPT_LOAD_MODEL"
 
 #run train.py
-CMD_STRING="python $main_dir_path/train.py $OPT_STRING"
+CMD_STRING="python $main_dir_path/train_error_bias.py $OPT_STRING"
 echo
 echo $CMD_STRING
 echo
