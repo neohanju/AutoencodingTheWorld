@@ -67,7 +67,7 @@ parser.add_argument('--save_name', type=str, default='', help='name for network 
 parser.add_argument('--random_seed', type=int, help='manual seed')
 parser.add_argument('--debug_print', action='store_true', default=False, help='print debug information')
 # -----------------------------------------------------------------------------
-
+parser.add_argument('--only_diff', type=int, help='use only diff dataset')
 options = parser.parse_args()
 
 # seed
@@ -319,6 +319,9 @@ for iter in range(options.max_iter):
     for path in diff_paths.values():
         print(path)
         dataset.add_path(path)
+    if options.only_diff:
+        for path in dataset_paths:
+            dataset.remove_path(path)
     dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=True,
                                              num_workers=options.workers, pin_memory=True)
 
