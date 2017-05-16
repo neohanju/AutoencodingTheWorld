@@ -28,10 +28,10 @@
 # enter option
 model="AE-LTR"
 dataset="avenue"  # avenue | ped1 | ped2 | enter | exit, and also supports 'all'
-batch_size="20"
-epochs="1000"
+batch_size="160"
+epochs="2000"
 save_interval="50"
-margin_start="500000"
+margin_start="100000"
 num_gpu="1"
 gpu_ids=""
 pretrained_model_path=""
