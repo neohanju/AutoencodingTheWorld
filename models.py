@@ -161,7 +161,8 @@ class MarginLoss:
             cur_mse = mse_batch[i, :, :, :].sum().data[0]
             if max_mse < cur_mse:
                 max_mse = cur_mse
-        loss_info = {'max_mse': max_mse}
+        mse_per_sample = mse_batch.sum().div(num_samples).data[0]
+        loss_info = {'max_mse': max_mse, 'mse': mse_per_sample}
 
         # MSE with margin
         per_pixel_margin = math.sqrt(margin / num_elements)
