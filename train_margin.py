@@ -298,10 +298,10 @@ for epoch in range(options.epochs):
         loss_info = util.add_dict(loss_info, loss_detail)
 
         # calculate margin
-        if min_loss > loss_detail['mse']:
-            min_loss = loss_detail['mse']
-        if max_loss < loss_detail['mse']:
-            max_loss = loss_detail['mse']
+        if min_loss > loss_detail['max_error']:
+            min_loss = loss_detail['max_error']
+        if max_loss < loss_detail['max_error']:
+            max_loss = loss_detail['max_error']
 
         # ============================================
         # VISUALIZATION

@@ -152,22 +152,21 @@ class MarginLoss:
         # thanks to Autograd, you can train the net by just summing-up all losses and propagating them
         size_mini_batch = x.data.size()
         num_samples = size_mini_batch[0]
+        num_elements = size_mini_batch[1] * size_mini_batch[2] * size_mini_batch[3]
 
         # MSE
         mse_per_sample = x.sub(recon_x).pow(2).sum().div(num_samples).cpu().data[0]
-        loss_info = {'mse': mse_per_sample}
+        max_error_in_batch = x.sub(recon_x).pow(2).max().cpu().data[0] * num_elements
+        loss_info = {'mse': mse_per_sample, 'max_error': max_error_in_batch}
 
         # MSE with margin
-        per_pixel_margin = margin / (size_mini_batch[1] * size_mini_batch[2] * size_mini_batch[3])
+        per_pixel_margin = margin / num_elements
         clampled_recon_x = x.sub(recon_x).clamp(-per_pixel_margin, +per_pixel_margin).add(recon_x)
         # mse_per_sample_with_margin = x.sub(clampled_recon_x).pow(2).sum().div(num_samples).cpu().data[0]
-        recon_loss = self.reconstruction_criteria(clampled_recon_x, x).div(num_samples)
-        total_loss = recon_loss
-        loss_info['recon'] = recon_loss.data[0]
+        margin_loss = self.reconstruction_criteria(clampled_recon_x, x).div(num_samples)
+        loss_info['margin_loss'] = margin_loss.data[0]
 
-        loss_info['total'] = total_loss.data[0]
-
-        return total_loss, loss_info
+        return margin_loss, loss_info
 
 
 # =============================================================================
