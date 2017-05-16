@@ -319,6 +319,7 @@ for iter in range(options.max_iter):
     for path in diff_paths.values():
         print(path)
         dataset.add_path(path)
+
     if options.only_diff:
         for path in dataset_paths:
             dataset.remove_path(path)
