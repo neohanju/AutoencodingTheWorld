@@ -31,6 +31,7 @@ dataset="avenue"  # avenue | ped1 | ped2 | enter | exit, and also supports 'all'
 batch_size="20"
 epochs="1000"
 save_interval="50"
+margin_start="500000"
 num_gpu="1"
 gpu_ids=""
 pretrained_model_path=""
@@ -112,7 +113,7 @@ else
 fi
 
 # option command
-OPT_STRING="--model $model --dataset $dataset --data_root $OPT_DATA_ROOT --save_path $OPT_SAVE_PATH --save_name $OPT_SAVE_NAME --epochs $epochs $OPT_DISPLAY $OPT_DEBUG_PRINT --num_gpu $num_gpu --batch_size $batch_size --save_interval $save_interval $OPT_GPU_IDS $OPT_LOAD_MODEL"
+OPT_STRING="--model $model --dataset $dataset --data_root $OPT_DATA_ROOT --save_path $OPT_SAVE_PATH --save_name $OPT_SAVE_NAME --margin_start $margin_start --epochs $epochs $OPT_DISPLAY $OPT_DEBUG_PRINT --num_gpu $num_gpu --batch_size $batch_size --save_interval $save_interval $OPT_GPU_IDS $OPT_LOAD_MODEL"
 
 #run train.py
 CMD_STRING="python $main_dir_path/train_margin.py $OPT_STRING"
