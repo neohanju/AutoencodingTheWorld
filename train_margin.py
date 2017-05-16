@@ -259,9 +259,12 @@ margin = options.margin_start
 for epoch in range(options.epochs):
     tm_cur_epoch_start = tm_cur_iter_start = time.time()
     # calculate margin
-    if 0 != epoch and max_loss <= margin:
+    # if 0 != epoch and max_loss <= margin:
+    #     # margin = (min_loss + max_loss) / 2
+    #     margin = min_loss / 2
+    if 0 != epoch:
         # margin = (min_loss + max_loss) / 2
-        margin = min_loss / 2
+        margin = max_loss * 0.9
         print('[NOTICE] Margin is updated to %.3f!' % margin)
     min_loss = options.nc * options.image_size * options.image_size
     max_loss = -1
