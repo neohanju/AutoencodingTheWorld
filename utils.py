@@ -178,7 +178,9 @@ def viz_append_line_points(win, lines_dict, x_pos, title='losses at each iterati
 
 
 def get_loss_string(losses):
-    str_losses = 'Total: %.4f\tRecon: %.4f' % (losses['total'], losses['recon'])
+    str_losses = 'Total: %.4f' % (losses['total'])
+    if 'recon' in losses:
+        str_losses += ' Recon: %.4f' % (losses['recon'])
     if 'variational' in losses:
         str_losses += ' Var: %.4f' % (losses['variational'])
     if 'l1_reg' in losses:

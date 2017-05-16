@@ -163,10 +163,10 @@ class MarginLoss:
         per_pixel_margin = margin / num_elements
         clampled_recon_x = x.sub(recon_x).clamp(-per_pixel_margin, +per_pixel_margin).add(recon_x)
         # mse_per_sample_with_margin = x.sub(clampled_recon_x).pow(2).sum().div(num_samples).cpu().data[0]
-        margin_loss = self.reconstruction_criteria(clampled_recon_x, x).div(num_samples)
-        loss_info['margin_loss'] = margin_loss.data[0]
+        total_loss = self.reconstruction_criteria(clampled_recon_x, x).div(num_samples)
+        loss_info['total'] = total_loss.data[0]
 
-        return margin_loss, loss_info
+        return total_loss, loss_info
 
 
 # =============================================================================
