@@ -29,6 +29,7 @@ parser.add_argument('--nf', type=int, default=64, help='size of lowest image fil
 parser.add_argument('--l1_coef', type=float, default=0, help='coef of L1 regularization on the weights. default=0')
 parser.add_argument('--l2_coef', type=float, default=0.0005, help='coef of L2 regularization on the weights. default=0')
 parser.add_argument('--var_loss_coef', type=float, default=1.0, help='balancing coef of vairational loss. default=0')
+parser.add_argument('--margin_start', type=float, default=500000.0, help='starting margin of error. default=500,000')
 # training related ------------------------------------------------------------
 parser.add_argument('--model_path', type=str, default='', help='path of pretrained network. default=""')
 parser.add_argument('--batch_size', type=int, default=64, help='input batch size. default=64')
@@ -254,7 +255,7 @@ if options.continue_train:
 # main loop of training
 min_loss = 0
 max_loss = 0
-margin = 2000
+margin = options.margin_start
 for epoch in range(options.epochs):
     tm_cur_epoch_start = tm_cur_iter_start = time.time()
     # calculate margin
