@@ -29,7 +29,7 @@ parser.add_argument('--nf', type=int, default=64, help='size of lowest image fil
 parser.add_argument('--l1_coef', type=float, default=0, help='coef of L1 regularization on the weights. default=0')
 parser.add_argument('--l2_coef', type=float, default=0.0005, help='coef of L2 regularization on the weights. default=0')
 parser.add_argument('--var_loss_coef', type=float, default=1.0, help='balancing coef of vairational loss. default=0')
-parser.add_argument('--margin_start', type=float, default=500000.0, help='starting margin of error. default=500,000')
+parser.add_argument('--margin_start', type=float, default=100000.0, help='starting margin of error. default=500,000')
 # training related ------------------------------------------------------------
 parser.add_argument('--model_path', type=str, default='', help='path of pretrained network. default=""')
 parser.add_argument('--batch_size', type=int, default=64, help='input batch size. default=64')
@@ -299,10 +299,10 @@ for epoch in range(options.epochs):
         loss_info = util.add_dict(loss_info, loss_detail)
 
         # calculate margin
-        if min_loss > loss_detail['max_error']:
-            min_loss = loss_detail['max_error']
-        if max_loss < loss_detail['max_error']:
-            max_loss = loss_detail['max_error']
+        if min_loss > loss_detail['max_mse']:
+            min_loss = loss_detail['max_mse']
+        if max_loss < loss_detail['max_mse']:
+            max_loss = loss_detail['max_mse']
 
         # ============================================
         # VISUALIZATION

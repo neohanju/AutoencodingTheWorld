@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.init
 from torch.autograd import Variable
-
+import math
 
 # xavier_init
 def weight_init(module):
@@ -155,12 +155,16 @@ class MarginLoss:
         num_elements = size_mini_batch[1] * size_mini_batch[2] * size_mini_batch[3]
 
         # MSE
-        mse_per_sample = x.sub(recon_x).pow(2).sum().div(num_samples).cpu().data[0]
-        max_error_in_batch = x.sub(recon_x).pow(2).max().cpu().data[0] * num_elements
-        loss_info = {'mse': mse_per_sample, 'max_error': max_error_in_batch}
+        mse_batch = x.sub(recon_x).pow(2)
+        max_mse = 0
+        for i in range(num_samples):
+            cur_mse = mse_batch[i, :, :, :].sum().data[0]
+            if max_mse < cur_mse:
+                max_mse = cur_mse
+        loss_info = {'max_mse': max_mse}
 
         # MSE with margin
-        per_pixel_margin = margin / num_elements
+        per_pixel_margin = math.sqrt(margin / num_elements)
         clampled_recon_x = x.sub(recon_x).clamp(-per_pixel_margin, +per_pixel_margin).add(recon_x)
         # mse_per_sample_with_margin = x.sub(clampled_recon_x).pow(2).sum().div(num_samples).cpu().data[0]
         total_loss = self.reconstruction_criteria(clampled_recon_x, x).div(num_samples)
