@@ -15,7 +15,7 @@ def weight_init(module):
         module.bias.data.fill_(0)
 
 
-def init_model_and_loss(options, cuda=False):
+def init_model_and_loss(options, cuda=False, margin_loss=False):
 
     # create model instance
     if 'AE-LTR' == options.model:
@@ -41,11 +41,14 @@ def init_model_and_loss(options, cuda=False):
         model.cuda()
 
     # loss
-    loss = OurLoss(cuda)
+    if margin_loss:
+        loss = MarginLoss(cuda)
+    else:
+        loss = OurLoss(cuda)
     return model, loss
 
 
-    # =============================================================================
+# =============================================================================
 # Loss function
 # =============================================================================
 class EBCAELoss:
@@ -77,19 +80,9 @@ class EBCAELoss:
             for j in range(num_clusters):
                 q_i[:, :, :, j] = z.add_(-cluster_mus[j]).pow(2).div_(alpha).add_(1).pow(-(alpha+1)/2)
 
-
             cluster_loss = self.cluster_criteria(P, Q)
             loss_info['clustering'] = cluster_loss.data[0]
             total_loss += cluster_loss
-
-        # if options.variational:
-        #     assert mu is not None and logvar is not None
-        #     # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
-        #     kld_element = mu.pow(2).add_(logvar.exp()).mul_(-1).add_(1).add_(logvar)
-        #     kld_loss = torch.sum(kld_element).mul_(-0.5)
-        #     kld_loss_final = kld_loss.div_(size_mini_batch).mul_(options.var_loss_coef)
-        #     loss_info['variational'] = kld_loss_final.data[0]
-        #     total_loss += kld_loss_final
 
         loss_info['total'] = total_loss.data[0]
         return total_loss, loss_info
@@ -146,21 +139,35 @@ class OurLoss:
             loss = self.GAN_criteria(output, label).div_(size_mini_batch)
             return loss
 
-        '''
-        if options.variational:
-            assert mu is not None and logvar is not None
-            # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
-            kld_element = mu.pow(2).add_(logvar.exp()).mul_(-1).add_(1).add_(logvar)
-            kld_loss = torch.sum(kld_element).mul_(-0.5)
-            kld_loss_final = kld_loss.div_(size_mini_batch).mul_(options.var_loss_coef)
-            loss_info['variational'] = kld_loss_final.data[0]
-            total_loss += kld_loss_final
-        '''
-        # if 0.0 != options.l1_coef:
-        #     l1_loss = options.l1_coef * l1_regularize_criteria(model.parameters(), l1_target)
-        #     loss_info['l1_reg'] = l1_loss.data[0]
-        #     # params.data -= options.learning_rate * params.grad.data
-        #     total_loss += l1_loss
+
+class MarginLoss:
+    def __init__(self, cuda=False):
+        self.reconstruction_criteria = nn.MSELoss(size_average=False)
+        # l1_regularize_criteria = nn.L1Loss(size_average=False)
+        # l1_target = Variable([])
+        if cuda and torch.cuda.is_available():
+            self.reconstruction_criteria.cuda()
+
+    def calculate(self, recon_x, x, margin, options, mu=None, logvar=None):
+        # thanks to Autograd, you can train the net by just summing-up all losses and propagating them
+        size_mini_batch = x.data.size()
+        num_samples = size_mini_batch[0]
+
+        # MSE
+        mse_per_sample = x.sub(recon_x).pow(2).sum().div(num_samples).cpu().data[0]
+        loss_info = {'mse': mse_per_sample}
+
+        # MSE with margin
+        per_pixel_margin = margin / (size_mini_batch[1] * size_mini_batch[2] * size_mini_batch[3])
+        clampled_recon_x = x.sub(recon_x).clamp(-per_pixel_margin, +per_pixel_margin).add(recon_x)
+        # mse_per_sample_with_margin = x.sub(clampled_recon_x).pow(2).sum().div(num_samples).cpu().data[0]
+        recon_loss = self.reconstruction_criteria(clampled_recon_x, x).div(num_samples)
+        total_loss = recon_loss
+        loss_info['recon'] = recon_loss.data[0]
+
+        loss_info['total'] = total_loss.data[0]
+
+        return total_loss, loss_info
 
 
 # =============================================================================
