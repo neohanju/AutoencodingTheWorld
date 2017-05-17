@@ -26,12 +26,10 @@ class VideoClipSets(torch.utils.data.Dataset):
         self.dataset_names = []
         self.video_names = []
         self.mean_images = {}
-        self.num_samples = 0
-
         self.refresh_sample_info()
 
     def __len__(self):
-        return self.num_samples
+        return len(self.file_paths)
 
     def __getitem__(self, item):
         if self.centered:
@@ -95,8 +93,7 @@ class VideoClipSets(torch.utils.data.Dataset):
         self.video_names = [self.video_names[pair[0]] for pair in idx_path_pairs]
 
         # count samples
-        self.num_samples = len(self.file_paths)
-        assert self.num_samples > 0
+        assert len(self.file_paths) > 0
 
 
 class OpticalFlowSets(VideoClipSets):
@@ -108,6 +105,24 @@ class OpticalFlowSets(VideoClipSets):
         mean_cube = np.load(os.path.join(os.path.dirname(path), 'mean_cube.npy'))
         self.mean_images[dataset_name] = torch.FloatTensor(mean_cube)
 
+class VideoClipBootstrappingSets(VideoClipSets):
+    def __init__(self, paths, centered=False, num_input_channel=18, video_ids=None):
+        # paths can be a single string ar an array of strings about paths that contain data samples right below
+        super().__init__(paths, centered, num_input_channel, video_ids)
+        self.sampled_data = range(len(self.file_paths))
+        self.file_paths_original = self.file_paths
+        self.dataset_names_original = self.dataset_names
+        self.video_names_original = self.video_names
+
+    def resampling(self, sampling_probs):
+        self.file_paths = []
+        self.dataset_names = []
+        self.video_names = []
+        for i, prob in enumerate(sampling_probs, 0):
+            if prob > np.random.uniform():
+                self.file_paths += self.file_paths_original[i]
+                self.dataset_names += self.dataset_names_original[i]
+                self.video_names += self.video_names_original[i]
 
 # ()()
 # ('')HAANJU.YOO
