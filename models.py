@@ -661,19 +661,19 @@ class AE_BN(nn.Module):  # autoencoder struction from "Learning temporal regular
 
         # encoder layers
         self.conv1 = nn.Conv2d(num_in_channels, num_filters, 11, 4)
-        self.bn1 = nn.BatchNorm2d(num_filters),
+        self.bn1 = nn.BatchNorm2d(num_filters)
         self.encode_act1 = nn.ReLU(True)
         # (batch_size) x 512 x 55 x 55
         self.pool1 = nn.MaxPool2d(2, stride=2, return_indices=True)
         # (batch_size) x 512 x 27 x 27
         self.conv2 = nn.Conv2d(num_filters, int(num_filters / 2), 5, 1, 2)
-        self.bn2 = nn.BatchNorm2d(int(num_filters / 2)),
+        self.bn2 = nn.BatchNorm2d(int(num_filters / 2))
         self.encode_act2 = nn.ReLU(True)
         # (batch_size) x 256 x 27 x 27
         self.pool2 = nn.MaxPool2d(2, stride=2, return_indices=True)
         # (batch_size) x 256 x 13 x 13
         self.conv3 = nn.Conv2d(int(num_filters / 2), z_size, 3, 1, 1)
-        self.bn3 = nn.BatchNorm2d(z_size),
+        self.bn3 = nn.BatchNorm2d(z_size)
         self.encode_act3 = nn.ReLU(True)
         # (batch_size) x 128 x 13 x 13
 
