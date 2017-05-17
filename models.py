@@ -705,9 +705,9 @@ class AE_BN(nn.Module):  # autoencoder struction from "Learning temporal regular
         return code, index1, size1, index2, size2
 
     def decode(self, code, index1, size1, index2, size2):
-        decode1 = self.unpool1(self.decode_act1(self.db1(self.deconv1(code))), index2,
+        decode1 = self.unpool1(self.decode_act1(self.dbn1(self.deconv1(code))), index2,
                                output_size=torch.Size([-1, -1, size2, size2]))
-        decode2 = self.unpool2(self.decode_act2(self.db2(self.deconv2(decode1))), index1,
+        decode2 = self.unpool2(self.decode_act2(self.dbn2(self.deconv2(decode1))), index1,
                                output_size=torch.Size([-1, -1, size1, size1]))
         return self.decode_act3(self.deconv3(decode2))
 
