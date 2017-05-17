@@ -72,7 +72,7 @@ def sample_batch_to_image(batch_data):
 
 
 def decentering(image, mean_image):
-    if mean_image.shape[0] > 1:
+    if mean_image.ndim > 2:
         mean_image = mean_image[5]
     return gray_single_to_image(image * 255 + mean_image)
 

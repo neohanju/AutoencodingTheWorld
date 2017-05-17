@@ -29,12 +29,13 @@ parser.add_argument('--nf', type=int, default=64, help='size of lowest image fil
 parser.add_argument('--l1_coef', type=float, default=0, help='coef of L1 regularization on the weights. default=0')
 parser.add_argument('--l2_coef', type=float, default=0.0005, help='coef of L2 regularization on the weights. default=0')
 parser.add_argument('--var_loss_coef', type=float, default=1.0, help='balancing coef of vairational loss. default=0')
-parser.add_argument('--margin_sigma', type=float, default=2.5, help='Multiplier on MSE sigma for margin. default=2.5')
+parser.add_argument('--margin_sigma', type=float, default=1.5, help='Multiplier on MSE sigma for margin. default=2.5')
 # training related ------------------------------------------------------------
 parser.add_argument('--model_path', type=str, default='', help='path of pretrained network. default=""')
 parser.add_argument('--batch_size', type=int, default=64, help='input batch size. default=64')
 parser.add_argument('--epochs', type=int, default=1000, help='number of epochs to train for. default=25')
 parser.add_argument('--max_iter', type=int, default=150000, help='number of iterations to train for. default=150,000')
+parser.add_argument('==resample_interval', type=int, default=10, help="resampling interval. default=10")
 # data related ----------------------------------------------------------------
 parser.add_argument('--dataset', type=str, required=True, nargs='+',
                     help="all | avenue | ped1 | ped2 | enter | exit. 'all' means using entire data")
@@ -169,6 +170,7 @@ debug_print('Dataset is ready')
 util.target_sample_index = 0
 util.target_frame_index = int(options.nc / 2)
 util.mean_images = mean_images
+util.optical_flow = False
 debug_print('Utility library is ready')
 
 # for generating diff. samples
@@ -253,61 +255,20 @@ if options.continue_train:
         train_info['prev_epoch_count'] += prev_train_info['prev_epoch_count']
         train_info['prev_iter_count'] += prev_train_info['prev_iter_count']
 
-
+num_samples_before_sampling = len(dataset)
+learning_margin = 0
 for epoch in range(options.epochs):
-
-    # =============================================================================
-    # MEASURE MSE
-    # =============================================================================
-    dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=False,
-                                             num_workers=options.workers)
-
-    print('Start testing...')
-    model.eval()
-    sample_MSE = []
-    for i, (data, setname, _, filename) in enumerate(dataloader, 1):
-
-        time_iter_start = time.time()
-
-        # feed data
-        if data.size() != input_batch.data.size():
-            input_batch.data.resize_(data.size())
-            recon_batch.data.resize_(data.size())
-        input_batch.data.copy_(data)
-
-        # forward
-        recon_batch, mu_batch, logvar_batch = model(input_batch)
-
-        # evaluate MSE
-        diff_batch = recon_batch.sub_(input_batch).pow(2)
-        for diff_idx in range(input_batch.data.size()[0]):
-            diff_map = diff_batch.data[diff_idx, :, :, :].cpu().numpy()
-            cur_mse = np.sum(diff_map)
-            sample_MSE += [cur_mse]
-
-        print('[%4d/%4d][%3d/%3d] Evaluate MSE, Iter time elapsed: %s'
-              % (epoch + 1, options.epochs, i, len(dataloader), util.formatted_time(time.time() - time_iter_start)))
-
-    MSE_np = np.array(sample_MSE)
-    MSE_mean = np.mean(MSE_np, axis=0)
-    MSE_std = np.std(MSE_np, axis=0)
-    MSE_max = max(sample_MSE)
-    MSE_min = min(sample_MSE)
-    margin = MSE_mean * options.margin_sigma * MSE_std
-    print('[%4d/%4d] margin: %.3f, MSE: min=%.3f, max=%.3f, mean=%.3f, std=%.3f' %
-          (epoch + 1, options.epochs, margin, MSE_min, MSE_max, MSE_mean, MSE_std))
 
     # =============================================================================
     # NETWORK TRAINING
     # =============================================================================
-    sampling_prob = [(mse - MSE_min) / (MSE_max - MSE_min) for mse in sample_MSE]
-    dataset.resampling(sampling_prob)
     dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=True,
                                              num_workers=options.workers)
 
     print('Start training...')
-    model.train()
-    # main loop of training
+    min_loss = options.nc * options.image_size * options.image_size
+    max_loss = -1
+
     tm_cur_epoch_start = tm_cur_iter_start = time.time()
     for i, (data, setname, _, _) in enumerate(dataloader, 1):
         num_iters_in_epoch = i
@@ -324,7 +285,7 @@ for epoch in range(options.epochs):
         recon_batch, mu_batch, logvar_batch = model(input_batch)
 
         # backward
-        loss, loss_detail = our_loss.calculate(recon_batch, input_batch, margin, options, mu_batch, logvar_batch)
+        loss, loss_detail = our_loss.calculate(recon_batch, input_batch, learning_margin, options, mu_batch, logvar_batch)
         loss.backward()
 
         # update
@@ -384,12 +345,12 @@ for epoch in range(options.epochs):
 
     print('====> Epoch %d is terminated: Epoch time is %s, Avg. loss %.3f, min %.3f, max %.3f, margin %.3f'
           % (epoch + 1, util.formatted_time(time.time() - tm_cur_epoch_start), average_loss_info['total'], min_loss,
-             max_loss, margin))
+             max_loss, learning_margin))
 
     # draw graph at every drawing period (always draw at the beginning(= epoch zero))
     loss_info_vis = util.add_dict(average_loss_info, loss_info_vis)
     time_info_vis = util.add_dict(average_time_info, time_info_vis)
-    if 0 == (epoch+1) % options.display_interval or 0 == epoch:
+    if options.display and 0 == (epoch+1) % options.display_interval or 0 == epoch:
         # averaging w.r.t. display frequency
         if 1 != options.display_interval and 0 != epoch:
             loss_info_vis = {key: value / options.display_interval for key, value in loss_info_vis.items()}
@@ -408,6 +369,58 @@ for epoch in range(options.epochs):
         util.save_model(os.path.join(save_path, '%s_epoch_%03d.pth')
                         % (options.save_name, epoch+1), model.state_dict(), train_info, True)
 
+    if 0 != (epoch+1) % options.resample_interval:
+        continue
 
+    # =============================================================================
+    # RESAMPLING
+    # =============================================================================
+    sampling_prob = [1.0] * num_samples_before_sampling
+    dataset.resampling(sampling_prob)
+    dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=False,
+                                             num_workers=options.workers)
+
+    print('Start testing...')
+    model.eval()
+    sample_MSE = []
+    for i, (data, setname, _, _) in enumerate(dataloader, 1):
+
+        time_iter_start = time.time()
+
+        # feed data
+        if data.size() != input_batch.data.size():
+            input_batch.data.resize_(data.size())
+            recon_batch.data.resize_(data.size())
+        input_batch.data.copy_(data)
+
+        # forward
+        recon_batch, mu_batch, logvar_batch = model(input_batch)
+
+        # evaluate MSE
+        diff_batch = recon_batch.sub_(input_batch).pow(2)
+        for diff_idx in range(input_batch.data.size()[0]):
+            diff_map = diff_batch.data[diff_idx, :, :, :].cpu().numpy()
+            cur_mse = np.sum(diff_map)
+            sample_MSE += [cur_mse]
+
+            # print('[%4d/%4d][%3d/%3d] Evaluate MSE, Iter time elapsed: %s'
+            #       % (epoch + 1, options.epochs, i, len(dataloader), util.formatted_time(time.time() - time_iter_start)))
+
+    MSE_np = np.array(sample_MSE)
+    MSE_mean = np.mean(MSE_np, axis=0)
+    MSE_std = np.std(MSE_np, axis=0)
+    MSE_max = max(sample_MSE)
+    MSE_min = min(sample_MSE)
+    margin = MSE_mean + options.margin_sigma * MSE_std
+    print('[%4d/%4d] margin: %.3f, MSE: min=%.3f, max=%.3f, mean=%.3f, std=%.3f' %
+          (epoch + 1, options.epochs, margin, MSE_min, MSE_max, MSE_mean, MSE_std))
+
+    sampling_prob = [min((mse - MSE_min) / (margin - MSE_min), 1) for mse in sample_MSE]
+    print(' Resampling...')
+    while True:
+        dataset.resampling(sampling_prob)
+        if len(dataset) > 0:
+            break
+    print(' Resampled data %d (%.3f percent)' % (len(dataset), len(dataset) / num_samples_before_sampling * 100))
 #()()
 #('')HAANJU.YOO

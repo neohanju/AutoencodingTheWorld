@@ -28,9 +28,11 @@
 # enter option
 model="AE-LTR"
 dataset="avenue"  # avenue | ped1 | ped2 | enter | exit, and also supports 'all'
-batch_size="80"
-epochs="1000"
-save_interval="10"
+batch_size="160"
+epochs="2000"
+save_interval="50"
+margin_sigma="1.5"
+resample_interval="10"
 num_gpu="1"
 gpu_ids=""
 pretrained_model_path=""
@@ -93,7 +95,7 @@ cp "$main_dir_path/scripts/evaluate_single.sh" "$OPT_SAVE_PATH/evaluate_single.s
 if [ "$pretrained_model_path" = "" ]; then
     OPT_LOAD_MODEL=""
 else
-    OPT_LOAD_MODEL="--model_path $pretrained_model_path"
+    OPT_LOAD_MODEL="--load_model_path $pretrained_model_path"
 fi
 if [ $display = true  ]; then
 	OPT_DISPLAY="--display --display_interval $display_interval"
@@ -112,7 +114,7 @@ else
 fi
 
 # option command
-OPT_STRING="--model $model --dataset $dataset --data_root $OPT_DATA_ROOT --save_path $OPT_SAVE_PATH --save_name $OPT_SAVE_NAME --epochs $epochs $OPT_DISPLAY $OPT_DEBUG_PRINT --num_gpu $num_gpu --batch_size $batch_size --save_interval $save_interval $OPT_GPU_IDS $OPT_LOAD_MODEL"
+OPT_STRING="--model $model --dataset $dataset --data_root $OPT_DATA_ROOT --save_path $OPT_SAVE_PATH --save_name $OPT_SAVE_NAME --margin_sigma $margin_sigma --resample_interval $resample_interval --epochs $epochs $OPT_DISPLAY $OPT_DEBUG_PRINT --num_gpu $num_gpu --batch_size $batch_size --save_interval $save_interval $OPT_GPU_IDS $OPT_LOAD_MODEL"
 
 #run train.py
 CMD_STRING="python $main_dir_path/train_bootstrapping.py $OPT_STRING"
