@@ -35,7 +35,7 @@ parser.add_argument('--model_path', type=str, default='', help='path of pretrain
 parser.add_argument('--batch_size', type=int, default=64, help='input batch size. default=64')
 parser.add_argument('--epochs', type=int, default=1000, help='number of epochs to train for. default=25')
 parser.add_argument('--max_iter', type=int, default=150000, help='number of iterations to train for. default=150,000')
-parser.add_argument('==resample_interval', type=int, default=10, help="resampling interval. default=10")
+parser.add_argument('--resample_interval', type=int, default=10, help="resampling interval. default=10")
 # data related ----------------------------------------------------------------
 parser.add_argument('--dataset', type=str, required=True, nargs='+',
                     help="all | avenue | ped1 | ped2 | enter | exit. 'all' means using entire data")
@@ -257,6 +257,7 @@ if options.continue_train:
 
 num_samples_before_sampling = len(dataset)
 learning_margin = 0
+margin = 0
 for epoch in range(options.epochs):
 
     # =============================================================================
