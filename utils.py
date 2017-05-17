@@ -12,7 +12,8 @@ viz = Visdom()
 target_sample_index = 0
 target_frame_index = 5
 mean_images = {}
-
+mean_cubes = {}
+optical_flow = False
 
 # =============================================================================
 # SYSTEM
@@ -71,6 +72,8 @@ def sample_batch_to_image(batch_data):
 
 
 def decentering(image, mean_image):
+    if mean_image.shape[0] > 1:
+        mean_image = mean_image[5]
     return gray_single_to_image(image * 255 + mean_image)
 
 
@@ -78,7 +81,7 @@ def find_best_sample_indexes(loss_per_batch, nindex=4):
     indexes = []
     indexes_tmp = []
     for i in range(0, len(loss_per_batch)):
-        if ( nindex > len(indexes_tmp)):
+        if nindex > len(indexes_tmp):
             indexes_tmp.append([loss_per_batch[i].data.max(), i])
         else:
             indexes_tmp.sort()
@@ -96,7 +99,10 @@ def draw_images(win_dict, input_batch, recon_batch, setnames):
     # visualize input / reconstruction pair
     input_data = pick_frame_from_batch(input_batch)
     recon_data = pick_frame_from_batch(recon_batch)
-    viz_input_frame = decentering(input_data, mean_images[setnames[target_sample_index]])
+    if optical_flow:
+        viz_input_frame = decentering(input_data, mean_cubes[setnames[target_sample_index]])
+    else:
+        viz_input_frame = decentering(input_data, mean_images[setnames[target_sample_index]])
     viz_input_data = sample_batch_to_image(input_batch)
     viz_recon_data = sample_batch_to_image(recon_batch)
     # viz_recon_frame = decentering(recon_data, mean_images[setnames[target_sample_index]])
@@ -291,7 +297,7 @@ def load_metadata(metadata_path, cur_options=None):
 # =============================================================================
 # MISCELLANEOUS
 # =============================================================================
-def get_dataset_paths_and_mean_images(datasets, root_path, type):
+def get_dataset_paths_and_mean_images(datasets, root_path, type, optical_flow=False):
     if isinstance(datasets, str):  # legacy for the previous input option type
         datasets.replace(' ', '')  # remove white space
         datasets.replace("'", '')  # remove '
@@ -305,8 +311,12 @@ def get_dataset_paths_and_mean_images(datasets, root_path, type):
     dataset_paths = []
     mean_images = {}
     for name in dataset_names:
-        dataset_paths.append(os.path.join(root_path, name, type))
-        mean_images[name] = np.load(os.path.join(root_path, name, 'mean_image.npy'))
+        if optical_flow:
+            dataset_paths.append(os.path.join(root_path, name, 'optical_flow', type))
+            mean_images[name] = np.load(os.path.join(root_path, name, 'optical_flow', 'mean_cube.npy'))
+        else:
+            dataset_paths.append(os.path.join(root_path, name, type))
+            mean_images[name] = np.load(os.path.join(root_path, name, 'mean_image.npy'))
     return dataset_paths, mean_images
 
 

@@ -197,6 +197,7 @@ def get_mean_image():
 
 
 def get_mean_image_opticalflow():
+    target_length_optical = target_length - 1
     print('Get mean image of opticalflow...')
     for name in target_datasets:
         if datasets[name]['type'] is not 'train':
@@ -213,8 +214,8 @@ def get_mean_image_opticalflow():
                                         datasets[name]['type']+'ing_videos',
                                         os.path.splitext(datasets[name]['name_format'] % video)[0])
 
-            vx_image_files = get_file_paths(image_folder, '/*vx..', ['png', 'PNG'])
-            vy_image_files = get_file_paths(image_folder, '/*vy..', ['png', 'PNG'])
+            vx_image_files = get_file_paths(image_folder, '/*vx.', ['png', 'PNG'])
+            vy_image_files = get_file_paths(image_folder, '/*vy.', ['png', 'PNG'])
             for path in vx_image_files:
                 mean_vx += np.array(Image.open(path), dtype=np.float)
                 count_image += 1.0
@@ -226,12 +227,20 @@ def get_mean_image_opticalflow():
         mean_vx /= count_image  # make mean image.
         mean_vy /= count_image  # make mean image.
         # save mean image .npy and .png
-        np.save(os.path.join(DATASET_BASE_PATH, datasets[name]['name'], 'optical_flow', 'mean_vx'), mean_vx)
+
         Image.fromarray(np.uint8(mean_vx)).save(os.path.join(DATASET_BASE_PATH, datasets[name]['name'], 'optical_flow',
                                                              'mean_vx.png'))
-        np.save(os.path.join(DATASET_BASE_PATH, datasets[name]['name'], 'optical_flow', 'mean_vy'), mean_vy)
+
         Image.fromarray(np.uint8(mean_vy)).save(os.path.join(DATASET_BASE_PATH, datasets[name]['name'], 'optical_flow',
                                                              'mean_vy.png'))
+
+        mean_cube = np.zeros((target_length_optical*2, target_rows, target_cols), dtype=np.float)
+        for frm in range(0, target_length_optical-1):
+            mean_cube[frm] = mean_vx
+            mean_cube[frm+9] = mean_vy
+
+        np.save(os.path.join(DATASET_BASE_PATH, datasets[name]['name'], 'optical_flow', 'mean_cube'), mean_cube)
+
     print('Getting mean image is done')
 
 
@@ -336,6 +345,7 @@ def generate_samples_opticalflow(centering=False):
     # sample data container
     sample_data_x = np.zeros((target_length_optical, target_rows, target_cols), dtype=numpy_dtype)
     sample_data_y = np.zeros((target_length_optical, target_rows, target_cols), dtype=numpy_dtype)
+    sample_data = np.zeros((target_length_optical*2, target_rows, target_cols), dtype=numpy_dtype)
 
     for i, name in enumerate(target_datasets):
 
@@ -366,8 +376,8 @@ def generate_samples_opticalflow(centering=False):
                                             '%sing_videos' % datasets[name]['type'],
                                             os.path.splitext(datasets[name]['name_format'] % video)[0])
 
-                vx_image_paths = get_file_paths(image_folder, '/*vx..', ['png', 'PNG'])
-                vy_image_paths = get_file_paths(image_folder, '/*vy..', ['png', 'PNG'])
+                vx_image_paths = get_file_paths(image_folder, '/*vx.', ['png', 'PNG'])
+                vy_image_paths = get_file_paths(image_folder, '/*vy.', ['png', 'PNG'])
 
                 vx_target_image_paths = vx_image_paths[0::frame_stride]
                 vy_target_image_paths = vy_image_paths[0::frame_stride]
@@ -419,20 +429,18 @@ def generate_samples_opticalflow(centering=False):
                         sample_data_y[read_pos - start_pos + j] = image_data
 
                     # different file name format and index among set type
-                    vx_file_name_format = '%s_video_%02d' % (datasets[name]['name'], video) \
-                                          + '_frame_interval_%d_stride_%d_%06d_vx'
-                    vy_file_name_format = '%s_video_%02d' % (datasets[name]['name'], video) \
-                                          + '_frame_interval_%d_stride_%d_%06d_vy'
+                    file_name_format = '%s_video_%02d' % (datasets[name]['name'], video) \
+                                          + '_frame_interval_%d_stride_%d_%06d'
 
                     file_name_index = sample_count_wrt_video
 
                     save_file_path = os.path.join(DATASET_BASE_PATH, datasets[name]['name'], 'optical_flow', datasets[name]['type'],
-                                                  vx_file_name_format % (frame_stride, sample_stride, file_name_index))
-                    np.save(save_file_path, sample_data_x)
+                                                  file_name_format % (frame_stride, sample_stride, file_name_index))
 
-                    save_file_path = os.path.join(DATASET_BASE_PATH, datasets[name]['name'], 'optical_flow', datasets[name]['type'],
-                                                  vy_file_name_format % (frame_stride, sample_stride, file_name_index))
-                    np.save(save_file_path, sample_data_y)
+                    sample_data[0:target_length_optical] = sample_data_x
+                    sample_data[target_length_optical:2*target_length_optical] = sample_data_y
+
+                    np.save(save_file_path, sample_data)
 
                     stride_sample_count += 1
                     sample_count_wrt_video += 1
