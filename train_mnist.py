@@ -17,7 +17,7 @@ import os
 parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 64)')
-parser.add_argument('--epochs', type=int, default=100, metavar='N',
+parser.add_argument('--epochs', type=int, default=1000, metavar='N',
                     help='number of epochs to train (default: 2)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
@@ -25,7 +25,8 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
-parser.add_argument('--variational', action='store_true', default=False, help='add variational loss')
+parser.add_argument('--vae', action='store_true', default=False, help='add variational loss')
+parser.add_argument('--perturb', action='store_true', default=False, help='perturbation')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -128,7 +129,7 @@ def loss_function(recon_x, x, mu, logvar, margin):
 
     loss_info = dict(KLD=KLD.data[0], MSE_margin=MSE_margin.data[0])
 
-    if args.variational:
+    if args.vae:
         total_loss = MSE_margin + KLD
     else:
         total_loss = MSE_margin
@@ -206,7 +207,7 @@ def train(epoch, margin, do_perturb):
     outlier_ratio = num_outliers / len(MSE)
     if outlier_ratio < 0.1:
         is_stable = True
-    if MSE_stable_upper_bound > MSE_mean and is_stable:
+    if MSE_stable_upper_bound > MSE_mean and is_stable and args.perturb:
         is_need_perturb = True
 
     print('====> Epoch: {} Average loss: {:.4f} MSE: max={:.4f}, mean={:.4f}, std={:.4f}, Outlier rat.: {:.4f}'.format(
@@ -214,13 +215,13 @@ def train(epoch, margin, do_perturb):
 
     return is_need_perturb
 
-if args.variational:
-    filename_path = './data/mnist/mnist_VAE_latent.txt'
-else:
-    filename_path = './data/mnist/mnist_AE_latent.txt'
+str_perturb = '_perturb' if args.perturb else ''
+str_variational = '_vae' if args.vae else ''
+file_base_name = 'latent%s%s' % (str_perturb, str_variational)
+filename_path = './data/mnist/'
 
 
-def test(epoch):
+def test(epoch, save_path):
     model.eval()
     test_loss = 0
 
@@ -236,17 +237,20 @@ def test(epoch):
         for i in range(mu.data.size()[0]):
             output_info = np.append(mu[i].data.cpu().numpy().flatten(), mse_of_sample[i])
             output_info = np.append(output_info, labels[i])
-            util.file_print_list(filename_path, output_info, overwrite=False)
+            util.file_print_list(save_path, output_info, overwrite=False)
 
     test_loss /= len(test_loader.dataset)
     print('====> Test set loss: {:.4f}'.format(test_loss))
 
 
 util.make_dir('./data/mnist')
-util.file_print_list(filename_path, [], overwrite=True)
 
 for epoch in range(1, args.epochs + 1):
-    train(epoch, 0, False)
-test(epoch)
+    train(epoch, 0, args.perturb)
+
+    if epoch % 5 == 0:
+        result_path = os.path.join(filename_path, '%s_%04d.txt' % (file_base_name, epoch))
+        util.file_print_list(result_path, [], overwrite=True)
+        test(epoch, result_path)
 
 plt.show()
