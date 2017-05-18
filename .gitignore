@@ -52,4 +52,7 @@ matlab_codes/evaluation/result_graphs/*
 
 # ETC
 ######################
+data
 ./data/*
+MNIST_DATA
+./MNIST_DATA/*

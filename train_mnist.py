@@ -25,6 +25,7 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
+parser.add_argument('--variational', action='store_true', default=False, help='add variational loss')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -36,11 +37,11 @@ if args.cuda:
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 train_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('../data', train=True, download=True,
+    datasets.MNIST('./MNIST_DATA', train=True, download=True,
                    transform=transforms.ToTensor()),
     batch_size=args.batch_size, shuffle=True, **kwargs)
 test_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('../data', train=False, transform=transforms.ToTensor()),
+    datasets.MNIST('./MNIST_DATA', train=False, transform=transforms.ToTensor()),
     batch_size=args.batch_size, shuffle=False, **kwargs)
 
 
@@ -127,8 +128,10 @@ def loss_function(recon_x, x, mu, logvar, margin):
 
     loss_info = dict(KLD=KLD.data[0], MSE_margin=MSE_margin.data[0])
 
-    total_loss = MSE_margin + KLD
-    # total_loss = MSE_margin
+    if args.variational:
+        total_loss = MSE_margin + KLD
+    else:
+        total_loss = MSE_margin
     return total_loss, loss_info, mse_of_sample
 
 
@@ -211,8 +214,10 @@ def train(epoch, margin, do_perturb):
 
     return is_need_perturb
 
-
-filename_path = './data/mnist/mnist_VAE_latent.txt'
+if args.variational:
+    filename_path = './data/mnist/mnist_VAE_latent.txt'
+else:
+    filename_path = './data/mnist/mnist_AE_latent.txt'
 
 
 def test(epoch):
