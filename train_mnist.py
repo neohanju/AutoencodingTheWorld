@@ -27,6 +27,7 @@ parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
 parser.add_argument('--vae', action='store_true', default=False, help='add variational loss')
 parser.add_argument('--perturb', action='store_true', default=False, help='perturbation')
+parser.add_argument('--save', type=int, default=50, help='saving interval')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -248,7 +249,7 @@ util.make_dir('./data/mnist')
 for epoch in range(1, args.epochs + 1):
     train(epoch, 0, args.perturb)
 
-    if epoch % 5 == 0:
+    if epoch % args.save == 0:
         result_path = os.path.join(filename_path, '%s_%04d.txt' % (file_base_name, epoch))
         util.file_print_list(result_path, [], overwrite=True)
         test(epoch, result_path)
