@@ -27,6 +27,8 @@ parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
 parser.add_argument('--vae', action='store_true', default=False, help='add variational loss')
 parser.add_argument('--perturb', action='store_true', default=False, help='perturbation')
+parser.add_argument('--perturb_power', type=float, default=1.0, help='perturbation power (multiplied to max_mse)')
+parser.add_argument('--perturb_random', action='store_true', default=False, help='perturbation randomly')
 parser.add_argument('--save', type=int, default=50, help='saving interval')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -56,7 +58,7 @@ def imshow(img, title=None):
 
 
 class VAE(nn.Module):
-    def __init__(self):
+    def __init__(self, noise=True):
         super(VAE, self).__init__()
 
         self.fc1 = nn.Linear(784, 400)
@@ -69,6 +71,8 @@ class VAE(nn.Module):
 
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
+
+        self.noise = 1 if noise else 0
 
     def encode(self, x):
         h2 = self.relu(self.fc1(x))
@@ -91,11 +95,14 @@ class VAE(nn.Module):
 
     def forward(self, x):
         mu, logvar = self.encode(x.view(-1, 784))
-        z = self.reparametrize(mu, logvar)
+        if 1 == self.noise:
+            z = self.reparametrize(mu, logvar)
+        else:
+            z = mu
         return self.decode(z), mu, logvar
 
 
-model = VAE()
+model = VAE(args.vae)
 if args.cuda:
     model.cuda()
 
@@ -158,7 +165,9 @@ def train(epoch, margin, do_perturb):
         recon_batch, mu, logvar = model(data)
         loss, loss_info, mse_of_sample = loss_function(recon_batch, data, mu, logvar, margin)
         if do_perturb:
-            perturb_power = max(mse_of_sample)
+            perturb_power = max(mse_of_sample) * args.perturb_power
+            if args.perturb_random and max(mse_of_sample) > 100:
+                perturb_power *= np.random.uniform(-10.0, 10.0)
             h = mu.register_hook(lambda grad: grad * perturb_power)
             loss.backward()
             h.remove()
@@ -216,7 +225,8 @@ def train(epoch, margin, do_perturb):
 
     return is_need_perturb
 
-str_perturb = '_perturb' if args.perturb else ''
+str_perturb = '_perturb_%d' % int(args.perturb_power) if args.perturb else ''
+str_perturb += '_random' if args.perturb_random else ''
 str_variational = '_vae' if args.vae else ''
 file_base_name = 'latent%s%s' % (str_perturb, str_variational)
 filename_path = './data/mnist/'
