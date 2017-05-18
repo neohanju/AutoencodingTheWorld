@@ -30,12 +30,13 @@ parser.add_argument('--l1_coef', type=float, default=0, help='coef of L1 regular
 parser.add_argument('--l2_coef', type=float, default=0.0005, help='coef of L2 regularization on the weights. default=0')
 parser.add_argument('--var_loss_coef', type=float, default=1.0, help='balancing coef of vairational loss. default=0')
 parser.add_argument('--margin_sigma', type=float, default=1.5, help='Multiplier on MSE sigma for margin. default=2.5')
+parser.add_argument('--resample_interval', type=int, default=10, help="resampling interval. default=10")
+parser.add_argument('--z_perturb', action='store_true', default=False, help='Perturbation z with MSE. default=False')
 # training related ------------------------------------------------------------
 parser.add_argument('--model_path', type=str, default='', help='path of pretrained network. default=""')
 parser.add_argument('--batch_size', type=int, default=64, help='input batch size. default=64')
 parser.add_argument('--epochs', type=int, default=1000, help='number of epochs to train for. default=25')
 parser.add_argument('--max_iter', type=int, default=150000, help='number of iterations to train for. default=150,000')
-parser.add_argument('--resample_interval', type=int, default=10, help="resampling interval. default=10")
 # data related ----------------------------------------------------------------
 parser.add_argument('--dataset', type=str, required=True, nargs='+',
                     help="all | avenue | ped1 | ped2 | enter | exit. 'all' means using entire data")
@@ -283,10 +284,17 @@ for epoch in range(options.epochs):
         # forward
         tm_train_start = time.time()
         model.zero_grad()
-        recon_batch, mu_batch, logvar_batch = model(input_batch)
+        recon_batch, mu_batch, _ = model(input_batch)
 
         # backward
-        loss, loss_detail = our_loss.calculate(recon_batch, input_batch, learning_margin, options, mu_batch, logvar_batch)
+        loss, loss_detail = our_loss.calculate(recon_batch, input_batch, learning_margin, options)
+        if options.z_perturb and 0 != learning_margin:
+            perturb_power = (loss_detail['max_mse'] - min_loss) / (max_loss - min_loss) + 1
+            h = mu_batch.register_hook(lambda grad: grad * perturb_power)
+            loss.backward()
+            h.remove()
+        else:
+            loss.backward()
         loss.backward()
 
         # update
