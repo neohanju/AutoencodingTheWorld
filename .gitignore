@@ -56,3 +56,4 @@ data
 ./data/*
 MNIST_DATA
 ./MNIST_DATA/*
+*.jpg
