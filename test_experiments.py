@@ -91,7 +91,7 @@ win_images = dict(
 # =============================================================================
 # DATA PREPARATION
 # =============================================================================
-dataset_paths, mean_images = util.get_dataset_paths_and_mean_images(options.dataset, options.data_root, 'test')
+dataset_paths, mean_images = util.get_dataset_paths_and_mean_images(options.dataset, options.data_root, 'train')
 dataset = VideoClipSets(dataset_paths, video_ids=options.videos)
 dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=1, shuffle=False,
                                          num_workers=1, pin_memory=True)

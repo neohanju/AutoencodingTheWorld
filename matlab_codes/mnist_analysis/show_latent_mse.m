@@ -1,7 +1,7 @@
 clear;
 % =========================================================================
-file_name = 'latent_perturb_1_random_0080.txt';
-input_dir = '/home/mlpa/Workspace/github/VAE_regularization/data/mnist/';
+file_name = 'latent_vae_1000.txt';
+input_dir = '~/git/VAE_4_DET_AB/data/mnist/';
 % =========================================================================
 
 input_path = fullfile(input_dir, file_name);

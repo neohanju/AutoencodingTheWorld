@@ -57,6 +57,62 @@ def imshow(img, title=None):
         plt.suptitle(title)
 
 
+class VAE_conv(nn.Module):
+    def __init__(self, noise=True):
+        super(VAE_conv, self).__init__()
+
+        # 1 x 28 x 28
+        self.conv1 = nn.Conv2d(1, 10, 5, 2, 2)
+        self.bn1 = nn.BatchNorm2d(10)
+        # 10 x 14 x 14
+        self.conv2 = nn.Conv2d(10, 20, 5, 2, 2)
+        self.bn2 = nn.BatchNorm2d(20)
+        # 20 x 7 x 7
+        self.conv31 = nn.Conv2d(20, 2, 7, 1, 0)
+        self.conv32 = nn.Conv2d(20, 2, 7, 1, 0)
+        # 2 x 1 x 1
+        self.dconv1 = nn.ConvTranspose2d(2, 20, 7)
+        self.bn4 = nn.BatchNorm2d(20)
+        # 20 x 7 x 7
+        self.dconv2 = nn.ConvTranspose2d(20, 10, 5, 2, 2, output_padding=1)
+        self.bn5 = nn.BatchNorm2d(10)
+        # 10 x 14 x 14
+        self.dconv3 = nn.ConvTranspose2d(10, 1, 5, 2, 2,  output_padding=1)
+        # 1 x 28 x 28
+
+        self.relu = nn.ReLU()
+        self.sigmoid = nn.Sigmoid()
+
+        self.noise = 1 if noise else 0
+
+    def encode(self, x):
+        h2 = self.relu(self.bn1(self.conv1(x.view(-1, 1, 28, 28))))
+        h3 = self.relu(self.bn2(self.conv2(h2)))
+        return self.conv31(h3), self.conv32(h3)
+
+    def reparametrize(self, mu, logvar):
+        std = logvar.mul(0.5).exp_()
+        if args.cuda:
+            eps = torch.cuda.FloatTensor(std.size()).normal_()
+        else:
+            eps = torch.FloatTensor(std.size()).normal_()
+        eps = Variable(eps)
+        return eps.mul(std).add_(mu)
+
+    def decode(self, z):
+        h4 = self.relu(self.bn4(self.dconv1(z)))
+        h5 = self.relu(self.bn5(self.dconv2(h4)))
+        return self.sigmoid(self.dconv3(h5))
+
+    def forward(self, x):
+        mu, logvar = self.encode(x.view(-1, 784))
+        if 1 == self.noise:
+            z = self.reparametrize(mu, logvar)
+        else:
+            z = mu
+        return self.decode(z), mu, logvar
+
+
 class VAE(nn.Module):
     def __init__(self, noise=True):
         super(VAE, self).__init__()
@@ -102,7 +158,7 @@ class VAE(nn.Module):
         return self.decode(z), mu, logvar
 
 
-model = VAE(args.vae)
+model = VAE_conv(args.vae)
 if args.cuda:
     model.cuda()
 
@@ -206,6 +262,7 @@ def train(epoch, margin, do_perturb):
     # axarr[1].set_title('Best')
     # axarr[1].imshow(recon_best.cpu().numpy().reshape((28, 28)))
     # plt.draw()
+    # plt.show()
 
     # decide when it is need to be perturb
     is_need_perturb = False

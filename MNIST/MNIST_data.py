@@ -39,47 +39,60 @@ class MNIST(data.Dataset):
                 os.path.join(root, self.processed_folder, self.training_file))
             tmp_labels = self.train_labels.numpy()
             tmp_datas = self.train_data.numpy()
+            indeces_del = []
             indeces_9 = []
             indeces_4 = []
-            for index in range(0, len(self.train_data) - 1):
+
+            for index in range(0, len(tmp_labels)):
                 if not (tmp_labels[index] == 7 or tmp_labels[index] == 9 or tmp_labels[index] == 4):
-                    tmp_labels = np.delete(tmp_labels, index)
-                    tmp_datas = np.delete(tmp_datas, index)
+                    indeces_del.append(index)
                 if tmp_labels[index] == 9:
-                    indeces_9 = [indeces_9, index]
+                    indeces_9.append(index)
                 if tmp_labels[index] == 4:
-                    indeces_4 = [indeces_4, index]
-            for i in range(0, int(len(indeces_9)*0.8)):
-                tmp_labels = np.delete(tmp_labels, indeces_9[i])
-                tmp_datas = np.delete(tmp_datas, indeces_9[i])
-            for i in range(0, int(len(indeces_4) * 0.8)):
-                tmp_labels = np.delete(tmp_labels, indeces_4[i])
-                tmp_datas = np.delete(tmp_datas, indeces_4[i])
+                    indeces_4.append(index)
+
+            indeces_9 = indeces_9[0:int(len(indeces_9) * 0.8)]
+            indeces_4 = indeces_4[0:int(len(indeces_4) * 0.8)]
+
+            indeces_del = indeces_del + indeces_9
+            indeces_del = indeces_del + indeces_4
+            indeces_del.sort()
+
+            for i in reversed(indeces_del):
+                tmp_labels = np.delete(tmp_labels, i)
+                tmp_datas = np.delete(tmp_datas, i)
 
             self.train_labels = torch.from_numpy(tmp_labels)
             self.train_data = torch.from_numpy(tmp_datas)
+
 
 
         else:
             self.test_data, self.test_labels = torch.load(os.path.join(root, self.processed_folder, self.test_file))
             tmp_labels = self.test_labels.numpy()
             tmp_datas = self.test_data.numpy()
+            indeces_del = []
             indeces_9 = []
             indeces_4 = []
-            for index in range(0, len(self.test_data) - 1):
+
+            for index in range(0, len(tmp_labels)):
                 if not (tmp_labels[index] == 7 or tmp_labels[index] == 9 or tmp_labels[index] == 4):
-                    tmp_labels = np.delete(tmp_labels, index)
-                    tmp_datas = np.delete(tmp_datas, index)
+                    indeces_del.append(index)
                 if tmp_labels[index] == 9:
-                    indeces_9 = [indeces_9, index]
+                    indeces_9.append(index)
                 if tmp_labels[index] == 4:
-                    indeces_4 = [indeces_4, index]
-            for i in range(0, int(len(indeces_9) * 0.8)):
-                tmp_labels = np.delete(tmp_labels, indeces_9[i])
-                tmp_datas = np.delete(tmp_datas, indeces_9[i])
-            for i in range(0, int(len(indeces_4) * 0.8)):
-                tmp_labels = np.delete(tmp_labels, indeces_4[i])
-                tmp_datas = np.delete(tmp_datas, indeces_4[i])
+                    indeces_4.append(index)
+
+            indeces_9 = indeces_9[0:int(len(indeces_9) * 0.8)]
+            indeces_4 = indeces_4[0:int(len(indeces_4) * 0.8)]
+
+            indeces_del = indeces_del + indeces_9
+            indeces_del = indeces_del + indeces_4
+            indeces_del.sort()
+
+            for i in reversed(indeces_del):
+                tmp_labels = np.delete(tmp_labels, i)
+                tmp_datas = np.delete(tmp_datas, i)
 
             self.test_labels = torch.from_numpy(tmp_labels)
             self.test_data = torch.from_numpy(tmp_datas)
@@ -93,21 +106,21 @@ class MNIST(data.Dataset):
 
         # doing this so that it is consistent with all other datasets
         # to return a PIL Image
-        img = Image.fromarray(img.numpy(), mode='L')
+        #img = Image.fromarray(img.numpy(), mode='L')
+        img = []
+        #if self.transform is not None:
+         #   img = self.transform(img)
 
-        if self.transform is not None:
-            img = self.transform(img)
-
-        if self.target_transform is not None:
-            target = self.target_transform(target)
+#        if self.target_transform is not None:
+ #           target = self.target_transform(target)
 
         return img, target
 
     def __len__(self):
         if self.train:
-            return 60000
+            return len(self.train_labels)
         else:
-            return 10000
+            return len(self.test_labels)
 
     def _check_exists(self):
         return os.path.exists(os.path.join(self.root, self.processed_folder, self.training_file)) and \
