@@ -46,7 +46,7 @@ for file in filenames:
             image_axis = cur_image      # if image axis is empty, put image in that variable
         if not np.array_equal(image_axis, cur_image):
                         # save final frame
-            np.save(os.path.join(save_path, file, "%06d" % save_image_idx), image_axis)
+            np.save(os.path.join(save_path, file, "%06d" % save_image_idx), np.swapaxes(image_axis, 0, 2))
             Image.fromarray(np.uint8(image_axis)).save(os.path.join(save_path, file, "%06d.png" % save_image_idx))
             print("%06d images saved" % save_image_idx)
             # calculate mean image
@@ -55,7 +55,7 @@ for file in filenames:
             save_image_idx = save_image_idx + 1
             image_axis = None
     # save mean image
-    np.save(os.path.join(save_path, file, "mean_image"), mean_image)
+    np.save(os.path.join(save_path, file + "_mean_image"), np.swapaxes(mean_image, 0, 2))
     Image.fromarray(np.uint8(mean_image)).save(os.path.join(save_path, file + "_mean_image.png"))
     print("%s file end" % file)
 print("done")

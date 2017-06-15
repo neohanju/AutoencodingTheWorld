@@ -7,7 +7,7 @@ import torch.utils.data
 import torch.optim as optim
 from torch.autograd import Variable
 from models import init_model_and_loss
-from data import VideoClipSets
+from data import RGBImageSets
 import utils as util
 
 
@@ -22,10 +22,10 @@ def debug_print(arg):
 parser = argparse.ArgumentParser(description='Detecting abnormal behavior in videos')
 
 # model related ---------------------------------------------------------------
-parser.add_argument('--model', type=str, default='VAE', help='AE | AE-LTR | VAE | VAE-LTR | VAE-NARROW')
-parser.add_argument('--nc', type=int, default=10, help='number of input channel. default=10')
+parser.add_argument('--model', type=str, default='endoscope-BN', help='AE | AE-LTR | VAE | VAE-LTR | VAE-NARROW')
+parser.add_argument('--nc', type=int, default=3, help='number of input channel. default=3')
 parser.add_argument('--nz', type=int, default=128, help='size of the latent z vector. default=100')
-parser.add_argument('--nf', type=int, default=64, help='size of lowest image filters. default=64')
+parser.add_argument('--nf', type=int, default=32, help='size of lowest image filters. default=32')
 parser.add_argument('--l1_coef', type=float, default=0, help='coef of L1 regularization on the weights. default=0')
 parser.add_argument('--l2_coef', type=float, default=0, help='coef of L2 regularization on the weights. default=0')
 parser.add_argument('--var_loss_coef', type=float, default=1.0, help='balancing coef of vairational loss. default=0')
@@ -38,7 +38,7 @@ parser.add_argument('--max_iter', type=int, default=150000, help='number of iter
 parser.add_argument('--dataset', type=str, required=True, nargs='+',
                     help="all | avenue | ped1 | ped2 | enter | exit. 'all' means using entire data")
 parser.add_argument('--data_root', type=str, required=True, help='path to base folder of entire dataset')
-parser.add_argument('--image_size', type=int, default=227, help='input image size (width=height). default=227')
+parser.add_argument('--image_size', type=int, default=101, help='input image size (width=height). default=227')
 parser.add_argument('--workers', type=int, default=2, help='number of data loading workers')
 # optimization related --------------------------------------------------------
 parser.add_argument('--optimizer', type=str, default='adagrad',
@@ -60,7 +60,7 @@ parser.add_argument('--save_interval', type=int, default=100,
                     help='network saving interval w.r.t. epoch number. default=100')
 parser.add_argument('--save_path', type=str, default='./training_result',
                     help='path to trained network. default=./training_result')
-parser.add_argument('--save_name', type=str, default='', help='name for network saving')
+parser.add_argument('--save_name', type=str, default='endoscope', help='name for network saving')
 # ETC -------------------------------------------------------------------------
 parser.add_argument('--random_seed', type=int, help='manual seed')
 parser.add_argument('--debug_print', action='store_true', default=False, help='print debug information')
@@ -159,12 +159,11 @@ win_images = dict(
 # DATA PREPARATION
 # =============================================================================
 # set data loader
-dataset_paths, mean_images = util.get_dataset_paths_and_mean_images(options.dataset, options.data_root, 'train')
-dataset = VideoClipSets(dataset_paths, centered=False)
+dataset_paths = options.data_root
+dataset = RGBImageSets(dataset_paths, centered=False, video_ids=["video_1"])
 dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=True,
                                          num_workers=options.workers)
-for path in dataset_paths:
-    print("Dataset from '%s'" % path)
+
 debug_print('Data loader is ready')
 
 # streaming buffer
@@ -195,7 +194,7 @@ debug_print('Data streaming is ready')
 # for utility library
 util.target_sample_index = 0
 util.target_frame_index = int(options.nc / 2)
-util.mean_images = mean_images
+util.mean_images = dataset.get_mean_image()
 debug_print('Utility library is ready')
 
 
@@ -225,6 +224,8 @@ elif 'sgd' == options.optimizer:
     optimizer = optim.SGD(model_params, lr=options.learning_rate, weight_decay=options.l2_coef)
 assert optimizer
 
+print("set optimizer")
+
 # timer related
 tm_data_load_total = 0
 tm_iter_total = 0
@@ -251,12 +252,13 @@ if options.continue_train:
         train_info['prev_epoch_count'] += prev_train_info['prev_epoch_count']
         train_info['prev_iter_count'] += prev_train_info['prev_iter_count']
 
+print("start epoch")
 # main loop of training
 for epoch in range(options.epochs):
     tm_cur_epoch_start = tm_cur_iter_start = time.time()
-    for i, (data, setname, _, _) in enumerate(dataloader, 1):
-        num_iters_in_epoch = i
+    for i, data in enumerate(dataloader, 1):
 
+        num_iters_in_epoch = i
         # ============================================
         # DATA FEED
         # ============================================
@@ -273,10 +275,10 @@ for epoch in range(options.epochs):
         # forward
         tm_train_start = time.time()
         model.zero_grad()
-        recon_batch, mu_batch, logvar_batch = model(input_batch)
+        recon_batch = model(input_batch)
 
         # backward
-        loss, loss_detail = our_loss.calculate(recon_batch, input_batch, options, mu_batch, logvar_batch)
+        loss, loss_detail = our_loss.calculate(recon_batch, input_batch, options)
         loss.backward()
 
         # update
@@ -294,7 +296,7 @@ for epoch in range(options.epochs):
         tm_visualize_start = time.time()
         if options.display:
             # draw input/recon images
-            win_images = util.draw_images(win_images, data, recon_batch.data, setname)
+            win_images = util.draw_images(win_images, data, recon_batch.data, mean_image=util.mean_images)
         tm_visualize_consume = time.time() - tm_visualize_start
 
         # print iteration's summary
@@ -329,21 +331,22 @@ for epoch in range(options.epochs):
           % (epoch+1, util.formatted_time(time.time() - tm_cur_epoch_start), average_loss_info['total']))
 
     # draw graph at every drawing period (always draw at the beginning(= epoch zero))
-    loss_info_vis = util.add_dict(average_loss_info, loss_info_vis)
-    time_info_vis = util.add_dict(average_time_info, time_info_vis)
-    if 0 == (epoch+1) % options.display_interval or 0 == epoch:
-        # averaging w.r.t. display frequency
-        if 1 != options.display_interval and 0 != epoch:
-            loss_info_vis = {key: value / options.display_interval for key, value in loss_info_vis.items()}
-            time_info_vis = {key: value / options.display_interval for key, value in time_info_vis.items()}
-        # draw graphs
-        win_loss = util.viz_append_line_points(win_loss, loss_info_vis, epoch)
-        win_time = util.viz_append_line_points(win_time, time_info_vis, epoch,
-                                               title='times at each epoch',
-                                               ylabel='time')
-        # reset buffers
-        loss_info_vis = dict.fromkeys(loss_info_vis, 0)
-        time_info_vis = dict.fromkeys(time_info_vis, 0)
+    if options.display:
+        loss_info_vis = util.add_dict(average_loss_info, loss_info_vis)
+        time_info_vis = util.add_dict(average_time_info, time_info_vis)
+        if 0 == (epoch+1) % options.display_interval or 0 == epoch:
+            # averaging w.r.t. display frequency
+            if 1 != options.display_interval and 0 != epoch:
+                loss_info_vis = {key: value / options.display_interval for key, value in loss_info_vis.items()}
+                time_info_vis = {key: value / options.display_interval for key, value in time_info_vis.items()}
+            # draw graphs
+            win_loss = util.viz_append_line_points(win_loss, loss_info_vis, epoch)
+            win_time = util.viz_append_line_points(win_time, time_info_vis, epoch,
+                                                   title='times at each epoch',
+                                                   ylabel='time')
+            # reset buffers
+            loss_info_vis = dict.fromkeys(loss_info_vis, 0)
+            time_info_vis = dict.fromkeys(time_info_vis, 0)
 
     # checkpoint w.r.t. epoch
     if 0 == (epoch+1) % options.save_interval:

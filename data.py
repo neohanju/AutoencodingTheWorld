@@ -5,28 +5,27 @@ import numpy as np
 
 
 class RGBImageSets(torch.utils.data.Dataset):
-    def __init__(self, path, centered=False):
+    def __init__(self, path, centered=False, video_ids=None):
         super().__init__()
         self.centered = centered
 
         assert os.path.exists(path)
         self.base_path = path
 
-        # TODO: load mean image
-        self.mean_image = []
-
-        # TODO: find sub folders and save them to paths
+        self.mean_image = self.get_mean_image()
         self.paths = []
-        # TODO: sort the path
+        if video_ids is None:
+            self.paths = glob.glob(self.base_path + "/*/")
+        else:
+            for video_id in video_ids:
+                self.paths.append(os.path.join(self.base_path, video_id))
+        self.paths.sort()
+        print(self.paths)
 
         self.file_paths = []
         for path in self.paths:
             cur_file_paths = glob.glob(path + '/*.npy')
-
-            # TODO: find more simple sorting method
-            idx_path_pairs = [pair for pair in enumerate(self.file_paths, 0)]
-            idx_path_pairs = sorted(idx_path_pairs, key=lambda pair: (os.path.dirname(pair[1]), os.path.basename(pair[1])))
-            self.file_paths = [pair[1] for pair in idx_path_pairs]
+            cur_file_paths.sort()
             self.file_paths += cur_file_paths
 
     def __len__(self):
@@ -36,18 +35,20 @@ class RGBImageSets(torch.utils.data.Dataset):
         if self.centered:
             data = torch.FloatTensor(np.load(self.file_paths[item]))
         else:
-            data = torch.ByteTensor(np.load(self.file_paths[item])).float()
+            data = torch.FloatTensor(np.load(self.file_paths[item]))
             data = data - self.mean_image
             data.div_(255)
         return data
 
     def get_decenterd_data(self, centered_data):
         result = centered_data.mul_(255) + self.mean_image
-        result = torch.ByteTensor(result)
+        result = result.byte()
         return result
 
     def get_mean_image(self):
-        return self.mean_image
+        mean_image = np.load(os.path.join(self.base_path, "mean_image.npy"))
+        mean_image = torch.from_numpy(mean_image).float()
+        return mean_image
 
 
 class VideoClipSets(torch.utils.data.Dataset):

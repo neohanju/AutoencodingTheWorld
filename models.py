@@ -30,6 +30,8 @@ def init_model_and_loss(options, cuda=False, margin_loss=False):
         model = VAE_NARROW(options.nc, options.nz)
     elif 'AE-BN' == options.model:
         model = AE_BN(options.nc)
+    elif 'endoscope-BN' == options.model:
+        model = endoscope_BN(options.nc)
     assert model
 
     if options.model_path != '':
@@ -601,7 +603,7 @@ class AE_51x51(nn.Module):
             nn.ConvTranspose2d(4 * num_filters, 2 * num_filters, 5, 2, output_padding=1),
             nn.BatchNorm2d(2 * num_filters),
             nn.LeakyReLU(0.2, True),
-            # (batch_size) x 2NF x 10 x 10
+            # (batch_size) xAE_BN 2NF x 10 x 10
             nn.ConvTranspose2d(2 * num_filters, num_filters, 5, 2, output_padding=1),
             nn.BatchNorm2d(num_filters),
             nn.LeakyReLU(0.2, True),
@@ -733,5 +735,61 @@ class AE_BN(nn.Module):  # autoencoder struction from "Learning temporal regular
         self.unpool2.apply(weight_init)
         self.deconv3.apply(weight_init)
         self.decode_act3.apply(weight_init)
+
+class endoscope_BN(nn.Module):  # autoencoder struction for endoscope
+    def __init__(self, num_in_channels=3, num_filters=32):
+        super().__init__()
+        self.encoder = nn.Sequential(
+            # expected input: (L) x 101 x 101
+            nn.Conv2d(num_in_channels, num_filters, 5, 2, 0),
+            nn.BatchNorm2d(num_filters),
+            nn.LeakyReLU(0.2, True),
+            nn.Dropout2d(),
+            # state size: (nf) x 49 x 49
+            nn.Conv2d(num_filters, 2 * num_filters, 5, 2, 0),
+            nn.BatchNorm2d(2 * num_filters),
+            nn.LeakyReLU(0.2, True),
+            nn.Dropout2d(),
+            # state size: (2 x nf) x 23 x 23
+            nn.Conv2d(2 * num_filters, 4 * num_filters, 5, 2, 0),
+            nn.BatchNorm2d(4 * num_filters),
+            nn.LeakyReLU(0.2, True),
+            nn.Dropout2d()
+            # state size: (4 x nf) x 10 x 10
+        )
+
+        self.decoder = nn.Sequential(
+            # state size: (4 x nf) x 27 x 27
+            nn.ConvTranspose2d(4 * num_filters, 2 * num_filters, 5, 2, 0),
+            nn.BatchNorm2d(2 * num_filters),
+            nn.LeakyReLU(0.2, True),
+            nn.Dropout2d(),
+            # state size: (2 x nf) x 55 x 55
+            nn.ConvTranspose2d(2 * num_filters, num_filters, 5, 2, 0),
+            nn.BatchNorm2d(num_filters),
+            nn.LeakyReLU(0.2, True),
+            nn.Dropout2d(),
+            # state size: (nf) x 113 x 113
+            nn.ConvTranspose2d(num_filters, num_in_channels, 5, 2, 0),
+            nn.Tanh()
+            # state size: (L) x 227 x 227
+        )
+
+        # init weights
+        self.weight_init()
+
+    def encode(self, x):
+        return self.encoder(x)
+
+    def decode(self, z):
+        return self.decoder(z)
+
+    def forward(self, x):
+        z = self.encode(x)
+        return self.decode(z)
+
+    def weight_init(self):
+        self.encoder.apply(weight_init)
+        self.decoder.apply(weight_init)
 #()()
 #('')HAANJU.YOO

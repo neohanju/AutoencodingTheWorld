@@ -52,7 +52,7 @@ class DelayedKeyboardInterrupt(object):
 # =============================================================================
 # VISUALIZATION
 # =============================================================================
-def pick_frame_from_batch(batch_data, sample_index=target_sample_index, frame_index=target_frame_index):
+def pick_frame_from_batch(batch_data, RGB=False, sample_index=target_sample_index, frame_index=target_frame_index):
     if isinstance(batch_data, Variable):
         samples = batch_data.data
     else:
@@ -72,7 +72,10 @@ def sample_batch_to_image(batch_data):
 
 
 def decentering(image, mean_image):
-    if mean_image.ndim > 2:
+
+    if mean_image.ndim == 3:
+        return image * 255 + mean_image
+    elif mean_image.ndim > 3:
         mean_image = mean_image[5]
     return gray_single_to_image(image * 255 + mean_image)
 
@@ -125,6 +128,36 @@ def draw_images(win_dict, input_batch, recon_batch, setnames):
         # viz.heatmap(X=viz_recon_error, win=win_dict['recon_error'])
         viz.image(viz_recon_error, win=win_dict['recon_error'])
     return win_dict
+
+def draw_images(win_dict, input_batch, recon_batch, mean_image):
+    # visualize input / reconstruction pair
+    input_data = pick_frame_from_batch(input_batch)
+    recon_data = pick_frame_from_batch(recon_batch)
+    if optical_flow:
+        viz_input_frame = decentering(input_data, mean_image)
+    else:
+        viz_input_frame = decentering(input_data, mean_image)
+    viz_input_data = sample_batch_to_image(input_batch)
+    viz_recon_data = sample_batch_to_image(recon_batch)
+    # viz_recon_frame = decentering(recon_data, mean_images[setnames[target_sample_index]])
+    # viz_recon_error = np.flip(np.abs(input_data - recon_data), 0)  # for reverse y-axis in heat map
+    viz_recon_error = gray_single_to_image(np.abs(input_data - recon_data) * 127.5)
+    if not win_dict['exist']:
+        win_dict['exist'] = True
+        win_dict['input_frame'] = viz.image(viz_input_frame, opts=dict(title='Input'))
+        win_dict['input_data'] = viz.image(viz_input_data, opts=dict(title='Input'))
+        win_dict['recon_data'] = viz.image(viz_recon_data, opts=dict(title='Reconstruction'))
+        # win_dict['recon_frame'] = viz.image(viz_recon_frame, opts=dict(title='Reconstructed video frame'))
+        # win_dict['recon_error'] = viz.heatmap(X=viz_recon_error,
+        #                                       opts=dict(title='Reconstruction error', xmin=0, xmax=2))
+        win_dict['recon_error'] = viz.image(viz_recon_error, opts=dict(title='Reconstruction error'))
+    else:
+        viz.image(viz_input_frame, win=win_dict['input_frame'])
+        viz.image(viz_input_data, win=win_dict['input_data'])
+        viz.image(viz_recon_data, win=win_dict['recon_data'])
+        # viz.image(viz_recon_frame, win=win_dict['recon_frame'])
+        # viz.heatmap(X=viz_recon_error, win=win_dict['recon_error'])
+        viz.image(viz_recon_error, win=win_dict['recon_error'])
 
 
 def draw_images_GAN(win_dict, fake, best_indexes):
