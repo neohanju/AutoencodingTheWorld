@@ -4,6 +4,52 @@ import torch.utils.data
 import numpy as np
 
 
+class RGBImageSets(torch.utils.data.Dataset):
+    def __init__(self, path, centered=False):
+        super().__init__()
+        self.centered = centered
+
+        assert os.path.exists(path)
+        self.base_path = path
+
+        # TODO: load mean image
+        self.mean_image = []
+
+        # TODO: find sub folders and save them to paths
+        self.paths = []
+        # TODO: sort the path
+
+        self.file_paths = []
+        for path in self.paths:
+            cur_file_paths = glob.glob(path + '/*.npy')
+
+            # TODO: find more simple sorting method
+            idx_path_pairs = [pair for pair in enumerate(self.file_paths, 0)]
+            idx_path_pairs = sorted(idx_path_pairs, key=lambda pair: (os.path.dirname(pair[1]), os.path.basename(pair[1])))
+            self.file_paths = [pair[1] for pair in idx_path_pairs]
+            self.file_paths += cur_file_paths
+
+    def __len__(self):
+        return len(self.file_paths)
+
+    def __getitem__(self, item):
+        if self.centered:
+            data = torch.FloatTensor(np.load(self.file_paths[item]))
+        else:
+            data = torch.ByteTensor(np.load(self.file_paths[item])).float()
+            data = data - self.mean_image
+            data.div_(255)
+        return data
+
+    def get_decenterd_data(self, centered_data):
+        result = centered_data.mul_(255) + self.mean_image
+        result = torch.ByteTensor(result)
+        return result
+
+    def get_mean_image(self):
+        return self.mean_image
+
+
 class VideoClipSets(torch.utils.data.Dataset):
     def __init__(self, paths, centered=False, num_input_channel=10, video_ids=None):
         # paths can be a single string ar an array of strings about paths that contain data samples right below
@@ -104,6 +150,7 @@ class OpticalFlowSets(VideoClipSets):
     def generate_mean_cubes(self, path, dataset_name):
         mean_cube = np.load(os.path.join(os.path.dirname(path), 'mean_cube.npy'))
         self.mean_images[dataset_name] = torch.FloatTensor(mean_cube)
+
 
 class VideoClipBootstrappingSets(VideoClipSets):
     def __init__(self, paths, centered=False, num_input_channel=10, video_ids=None):

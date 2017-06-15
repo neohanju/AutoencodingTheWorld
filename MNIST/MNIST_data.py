@@ -9,7 +9,7 @@ import codecs
 import numpy as np
 
 
-class MNIST(data.Dataset):
+class myMNIST(data.Dataset):
     urls = [
         'http://yann.lecun.com/exdb/mnist/train-images-idx3-ubyte.gz',
         'http://yann.lecun.com/exdb/mnist/train-labels-idx1-ubyte.gz',
@@ -21,11 +21,13 @@ class MNIST(data.Dataset):
     training_file = 'training.pt'
     test_file = 'test.pt'
 
-    def __init__(self, root, train=True, transform=None, target_transform=None, download=False):
+    def __init__(self, root, train=True, transform=None, target_transform=None, download=False, sampling_prob=None):
         self.root = root
         self.transform = transform
         self.target_transform = target_transform
         self.train = train  # training set or test set
+        self.digit_index = [[], [], [], [], [], [], [], [], [], []]
+        self.sampling_pool = None
 
         if download:
             self.download()
@@ -37,90 +39,39 @@ class MNIST(data.Dataset):
         if self.train:
             self.train_data, self.train_labels = torch.load(
                 os.path.join(root, self.processed_folder, self.training_file))
-            tmp_labels = self.train_labels.numpy()
-            tmp_datas = self.train_data.numpy()
-            indeces_del = []
-            indeces_9 = []
-            indeces_4 = []
-
-            for index in range(0, len(tmp_labels)):
-                if not (tmp_labels[index] == 7 or tmp_labels[index] == 9 or tmp_labels[index] == 4):
-                    indeces_del.append(index)
-                if tmp_labels[index] == 9:
-                    indeces_9.append(index)
-                if tmp_labels[index] == 4:
-                    indeces_4.append(index)
-
-            indeces_9 = indeces_9[0:int(len(indeces_9) * 0.8)]
-            indeces_4 = indeces_4[0:int(len(indeces_4) * 0.8)]
-
-            indeces_del = indeces_del + indeces_9
-            indeces_del = indeces_del + indeces_4
-            indeces_del.sort()
-
-            for i in reversed(indeces_del):
-                tmp_labels = np.delete(tmp_labels, i)
-                tmp_datas = np.delete(tmp_datas, i)
-
-            self.train_labels = torch.from_numpy(tmp_labels)
-            self.train_data = torch.from_numpy(tmp_datas)
-
-
-
+            for i, label in enumerate(self.train_labels, 0):
+                self.digit_index[label] += [i]
+            self.sampling_pool = range(len(self.train_labels))
         else:
             self.test_data, self.test_labels = torch.load(os.path.join(root, self.processed_folder, self.test_file))
-            tmp_labels = self.test_labels.numpy()
-            tmp_datas = self.test_data.numpy()
-            indeces_del = []
-            indeces_9 = []
-            indeces_4 = []
+            for i, label in enumerate(self.test_labels, 0):
+                self.digit_index[label] += [i]
+            self.sampling_pool = range(len(self.test_labels))
 
-            for index in range(0, len(tmp_labels)):
-                if not (tmp_labels[index] == 7 or tmp_labels[index] == 9 or tmp_labels[index] == 4):
-                    indeces_del.append(index)
-                if tmp_labels[index] == 9:
-                    indeces_9.append(index)
-                if tmp_labels[index] == 4:
-                    indeces_4.append(index)
-
-            indeces_9 = indeces_9[0:int(len(indeces_9) * 0.8)]
-            indeces_4 = indeces_4[0:int(len(indeces_4) * 0.8)]
-
-            indeces_del = indeces_del + indeces_9
-            indeces_del = indeces_del + indeces_4
-            indeces_del.sort()
-
-            for i in reversed(indeces_del):
-                tmp_labels = np.delete(tmp_labels, i)
-                tmp_datas = np.delete(tmp_datas, i)
-
-            self.test_labels = torch.from_numpy(tmp_labels)
-            self.test_data = torch.from_numpy(tmp_datas)
-
+        if sampling_prob is not None:
+            self.resampling(sampling_prob)
 
     def __getitem__(self, index):
+        samp_index = self.sampling_pool[index]
         if self.train:
-            img, target = self.train_data[index], self.train_labels[index]
+            img, target = self.train_data[samp_index], self.train_labels[samp_index]
         else:
-            img, target = self.test_data[index], self.test_labels[index]
-
+            img, target = self.test_data[samp_index], self.test_labels[samp_index]
         # doing this so that it is consistent with all other datasets
         # to return a PIL Image
-        #img = Image.fromarray(img.numpy(), mode='L')
-        img = []
-        #if self.transform is not None:
-         #   img = self.transform(img)
-
-#        if self.target_transform is not None:
- #           target = self.target_transform(target)
+        img = Image.fromarray(img.numpy(), mode='L')
+        if self.transform is not None:
+            img = self.transform(img)
+        if self.target_transform is not None:
+            target = self.target_transform(target)
 
         return img, target
 
     def __len__(self):
         if self.train:
-            return len(self.train_labels)
+            return len(self.sampling_pool)
         else:
-            return len(self.test_labels)
+            return len(self.sampling_pool)
 
     def _check_exists(self):
         return os.path.exists(os.path.join(self.root, self.processed_folder, self.training_file)) and \
@@ -172,6 +123,17 @@ class MNIST(data.Dataset):
             torch.save(test_set, f)
 
         print('Done!')
+
+    def resampling(self, sampling_prob):
+        assert(10 == len(sampling_prob))
+        self.sampling_pool = []
+        for i, index_list in enumerate(self.digit_index, 0):
+            if 0 == sampling_prob[i]:
+                continue
+            end_index = int(sampling_prob[i] * len(index_list))
+            np.random.shuffle(index_list)
+            self.sampling_pool += index_list[0:end_index]
+        np.random.shuffle(self.sampling_pool)
 
 
 def get_int(b):

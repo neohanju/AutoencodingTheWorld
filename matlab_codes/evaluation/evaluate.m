@@ -179,7 +179,7 @@ function [] = evaluate(cost_base_path_)
 		
 		% evaluate
 		[det, gtg] = compute_overlaps(abnormal_regs, agt);
-		tp = tp + sum(det==1);
+		tp = tp + sum(gtg==1);
 		fp = fp + sum(det==0);
 		fn = fn + sum(gtg==0);
 		

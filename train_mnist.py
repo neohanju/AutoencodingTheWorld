@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import operator
 import utils as util
 import os
+from MNIST.MNIST_data import myMNIST
 
 
 parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
@@ -38,14 +39,17 @@ torch.manual_seed(args.seed)
 if args.cuda:
     torch.cuda.manual_seed(args.seed)
 
+sampling_prob = [1.0] * 10
+# sampling_prob = [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0]
+#                  0    1    2    3    4    5    6    7    8    9
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 train_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('./MNIST_DATA', train=True, download=True,
-                   transform=transforms.ToTensor()),
+    myMNIST('./MNIST_DATA', train=True, download=True,
+                   transform=transforms.ToTensor(), sampling_prob=sampling_prob),
     batch_size=args.batch_size, shuffle=True, **kwargs)
 test_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('./MNIST_DATA', train=False, transform=transforms.ToTensor()),
+    myMNIST('./MNIST_DATA', train=False, transform=transforms.ToTensor(), sampling_prob=sampling_prob),
     batch_size=args.batch_size, shuffle=False, **kwargs)
 
 
@@ -158,7 +162,48 @@ class VAE(nn.Module):
         return self.decode(z), mu, logvar
 
 
-model = VAE_conv(args.vae)
+class VAE_original(nn.Module):
+    def __init__(self, noise=True):
+        super(VAE_original, self).__init__()
+
+        self.fc1 = nn.Linear(784, 400)
+        self.fc21 = nn.Linear(400, 100)
+        self.fc22 = nn.Linear(400, 100)
+        self.fc3 = nn.Linear(100, 400)
+        self.fc4 = nn.Linear(400, 784)
+
+        self.relu = nn.ReLU()
+        self.sigmoid = nn.Sigmoid()
+
+        self.noise = 1 if noise else 0
+
+    def encode(self, x):
+        h1 = self.relu(self.fc1(x))
+        return self.fc21(h1), self.fc22(h1)
+
+    def reparametrize(self, mu, logvar):
+        std = logvar.mul(0.5).exp_()
+        if args.cuda:
+            eps = torch.cuda.FloatTensor(std.size()).normal_()
+        else:
+            eps = torch.FloatTensor(std.size()).normal_()
+        eps = Variable(eps)
+        return eps.mul(std).add_(mu)
+
+    def decode(self, z):
+        h3 = self.relu(self.fc3(z))
+        return self.sigmoid(self.fc4(h3))
+
+    def forward(self, x):
+        mu, logvar = self.encode(x.view(-1, 784))
+        if 1 == self.noise:
+            z = self.reparametrize(mu, logvar)
+        else:
+            z = mu
+        return self.decode(z), mu, logvar
+
+
+model = VAE_original(args.vae)
 if args.cuda:
     model.cuda()
 
@@ -289,10 +334,10 @@ file_base_name = 'latent%s%s' % (str_perturb, str_variational)
 filename_path = './data/mnist/'
 
 
-def test(epoch, save_path):
+def test(epoch, save_path=None):
     model.eval()
     test_loss = 0
-
+    num_digits = [0] * 10
     for data, labels in test_loader:
         if args.cuda:
             data = data.cuda()
@@ -306,19 +351,20 @@ def test(epoch, save_path):
             output_info = np.append(mu[i].data.cpu().numpy().flatten(), mse_of_sample[i])
             output_info = np.append(output_info, labels[i])
             util.file_print_list(save_path, output_info, overwrite=False)
+            num_digits[labels[i]] += 1
 
     test_loss /= len(test_loader.dataset)
     print('====> Test set loss: {:.4f}'.format(test_loss))
+    str_num_digits = ['%d=%d,' % (i, num) for i, num in enumerate(num_digits, 0)]
+    print('num digits: %s' % str_num_digits)
 
 
 util.make_dir('./data/mnist')
 
 for epoch in range(1, args.epochs + 1):
     train(epoch, 0, args.perturb)
-
     if epoch % args.save == 0:
         result_path = os.path.join(filename_path, '%s_%04d.txt' % (file_base_name, epoch))
         util.file_print_list(result_path, [], overwrite=True)
         test(epoch, result_path)
 
-plt.show()
