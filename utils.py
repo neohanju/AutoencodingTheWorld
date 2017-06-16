@@ -239,6 +239,7 @@ def save_dict_as_json_file(path, in_dict):
 
 
 def load_dict_from_json_file(path):
+    print(path)
     assert os.path.exists(path)
     with open(path, 'r') as infile:
         return json.load(infile)

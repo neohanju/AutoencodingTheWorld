@@ -56,9 +56,9 @@ parser.add_argument('--num_gpu', type=int, default=0,
 parser.add_argument('--gpu_ids', type=int, default=[], nargs='*',
                     help='Indices of GPUs in use. If you give this, num_gpu option input will be ignored. default=[]')
 # network saving related ------------------------------------------------------
-parser.add_argument('--save_interval', type=int, default=100,
+parser.add_argument('--save_interval', type=int, default=1,
                     help='network saving interval w.r.t. epoch number. default=100')
-parser.add_argument('--save_path', type=str, default='./training_result',
+parser.add_argument('--save_path', type=str, default='./training_result/endoscope',
                     help='path to trained network. default=./training_result')
 parser.add_argument('--save_name', type=str, default='endoscope', help='name for network saving')
 # ETC -------------------------------------------------------------------------
