@@ -105,6 +105,7 @@ class OurLoss:
     def calculate(self, recon_x, x, options, mu=None, logvar=None):
         # thanks to Autograd, you can train the net by just summing-up all losses and propagating them
         size_mini_batch = x.data.size()[0]
+
         recon_loss = self.reconstruction_criteria(recon_x, x).div_(size_mini_batch)
         total_loss = recon_loss
         loss_info = {'recon': recon_loss.data[0]}
@@ -662,6 +663,7 @@ class AE_BN(nn.Module):  # autoencoder struction from "Learning temporal regular
         super().__init__()
 
         # encoder layers
+        #  (batch_size) x 10 x 227 x 227
         self.conv1 = nn.Conv2d(num_in_channels, num_filters, 11, 4)
         self.bn1 = nn.BatchNorm2d(num_filters)
         self.encode_act1 = nn.ReLU(True)
@@ -715,7 +717,8 @@ class AE_BN(nn.Module):  # autoencoder struction from "Learning temporal regular
 
     def forward(self, x):
         code, index1, size1, index2, size2 = self.encode(x)
-        return self.decode(code, index1, size1, index2, size2), code, None
+        #return self.decode(code, index1, size1, index2, size2), code, None
+        return self.decode(code, index1, size1, index2, size2)
 
     def weight_init(self):
         self.conv1.apply(weight_init)

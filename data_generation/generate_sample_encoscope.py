@@ -5,12 +5,12 @@ from PIL import Image
 
 
 filenames = ["video_1", "video_2"]
-folder_path = '/home/leejeyeol/Data/endoscope/Videos'
-save_path = '/home/leejeyeol/Data/endoscope/Videos/frames'
+folder_path = '/home/leejeyeol/Data/endoscope_old/Videos'
+save_path = '/home/leejeyeol/Data/endoscope_old/Videos/frames'
 
 # image size
-x_size = 101
-y_size = 101
+x_size = 227
+y_size = 227
 
 def make_dir(path):
     # if there is no directory, make a directory.

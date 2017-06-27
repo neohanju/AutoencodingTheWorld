@@ -22,7 +22,7 @@ def debug_print(arg):
 parser = argparse.ArgumentParser(description='Detecting abnormal behavior in videos')
 
 # model related ---------------------------------------------------------------
-parser.add_argument('--model', type=str, default='endoscope-BN', help='AE | AE-LTR | VAE | VAE-LTR | VAE-NARROW')
+parser.add_argument('--model', type=str, default='AE-BN', help='AE | AE-LTR | VAE | VAE-LTR | VAE-NARROW')
 parser.add_argument('--nc', type=int, default=3, help='number of input channel. default=3')
 parser.add_argument('--nz', type=int, default=128, help='size of the latent z vector. default=100')
 parser.add_argument('--nf', type=int, default=32, help='size of lowest image filters. default=32')
@@ -38,7 +38,7 @@ parser.add_argument('--max_iter', type=int, default=150000, help='number of iter
 parser.add_argument('--dataset', type=str, required=True, nargs='+',
                     help="all | avenue | ped1 | ped2 | enter | exit. 'all' means using entire data")
 parser.add_argument('--data_root', type=str, required=True, help='path to base folder of entire dataset')
-parser.add_argument('--image_size', type=int, default=101, help='input image size (width=height). default=227')
+parser.add_argument('--image_size', type=int, default=227, help='input image size (width=height). default=227')
 parser.add_argument('--workers', type=int, default=2, help='number of data loading workers')
 # optimization related --------------------------------------------------------
 parser.add_argument('--optimizer', type=str, default='adagrad',
@@ -259,10 +259,14 @@ for epoch in range(options.epochs):
     for i, data in enumerate(dataloader, 1):
 
         num_iters_in_epoch = i
+
         # ============================================
         # DATA FEED
         # ============================================
         if data.size() != input_batch.data.size():
+            print(data.size())
+            print(input_batch.data.size())
+            print("data size not matched")
             # input_batch.data.resize_(data.size())
             # recon_batch.data.resize_(data.size())
             # this will be deprecated by 'last_drop' attributes of dataloader
