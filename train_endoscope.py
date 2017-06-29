@@ -22,7 +22,7 @@ def debug_print(arg):
 parser = argparse.ArgumentParser(description='Detecting abnormal behavior in videos')
 
 # model related ---------------------------------------------------------------
-parser.add_argument('--model', type=str, default='AE-BN', help='AE | AE-LTR | VAE | VAE-LTR | VAE-NARROW')
+parser.add_argument('--model', type=str, default='endoscope-BN', help='AE | AE-LTR | VAE | VAE-LTR | VAE-NARROW')
 parser.add_argument('--nc', type=int, default=3, help='number of input channel. default=3')
 parser.add_argument('--nz', type=int, default=128, help='size of the latent z vector. default=100')
 parser.add_argument('--nf', type=int, default=32, help='size of lowest image filters. default=32')

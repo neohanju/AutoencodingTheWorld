@@ -50,6 +50,7 @@ if options.random_seed is None:
 
 # load options from metadata
 metadata_path = options.model_path.replace('.pth', '.json')
+
 train_info, options, saved_options = util.load_metadata(metadata_path, options)
 
 # print test options
@@ -94,9 +95,11 @@ win_images = dict(
 # DATA PREPARATION
 # =============================================================================
 dataset_paths = options.data_root
-mean_image = os.path.join(dataset_paths, "mean_image.npy")
+mean_image_path = os.path.join(dataset_paths, "mean_image.npy")
 # todo : get video_ids by options
-dataset = RGBImageSets(dataset_paths, video_ids=["video_1"])
+video_ids=["video_2"]
+mean_image = np.load(mean_image_path)
+dataset = RGBImageSets(dataset_paths, video_ids=video_ids)
 dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=1, shuffle=False,
                                          num_workers=1, pin_memory=True)
 
@@ -161,7 +164,7 @@ mean = 0
 for i, data in enumerate(dataloader, 0):
     # todo ---
     dataset_name = "endoscope"
-    video_name = "video_1"
+    video_name = video_ids[0]
     if prev_dataset_name != dataset_name or prev_video_name != video_name:
         # new video is started
         print("Testing on '%s' dataset video '%s'... " % (dataset_name, video_name))
@@ -209,7 +212,7 @@ for i, data in enumerate(dataloader, 0):
 
     # visualization
     if options.display:
-        win_images = util.draw_images(win_images, input_batch, recon_batch.data, dataset_name)
+        win_images = util.draw_images_RGB(win_images, input_batch, recon_batch.data, mean_image, setnames=dataset_name)
         win_recon_cost = util.viz_append_line_points(win=win_recon_cost,
                                                      lines_dict=dict(recon=cur_cost, zero=0),
                                                      x_pos=cnt_cost,

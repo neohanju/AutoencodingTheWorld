@@ -52,7 +52,7 @@ class DelayedKeyboardInterrupt(object):
 # =============================================================================
 # VISUALIZATION
 # =============================================================================
-def pick_frame_from_batch(batch_data, RGB=False, sample_index=target_sample_index, frame_index=target_frame_index):
+def pick_frame_from_batch(batch_data, sample_index=target_sample_index, frame_index=target_frame_index):
     if isinstance(batch_data, Variable):
         samples = batch_data.data
     else:
@@ -60,15 +60,31 @@ def pick_frame_from_batch(batch_data, RGB=False, sample_index=target_sample_inde
     assert isinstance(samples, torch.FloatTensor) or isinstance(samples, torch.cuda.FloatTensor)
     return samples[sample_index, frame_index].cpu().numpy()
 
+def pick_frame_from_batch_RGB(batch_data, sample_index=target_sample_index):
+    if isinstance(batch_data, Variable):
+        samples = batch_data.data
+    else:
+        samples = batch_data
+    assert isinstance(samples, torch.FloatTensor) or isinstance(samples, torch.cuda.FloatTensor)
+    return samples[sample_index, :].cpu().numpy()
+
 
 def gray_single_to_image(image):
     return np.uint8(image[np.newaxis, :, :].repeat(3, axis=0))
+
+def RGB_to_image(image):
+    return np.uint8(image)
 
 
 def sample_batch_to_image(batch_data):
     single_image = ((pick_frame_from_batch(batch_data) * 0.5) + 0.5) * 255  # [-1, +1] to [0, 255]
     # un-normalize
     return gray_single_to_image(single_image)
+
+def sample_batch_to_image_RGB(batch_data):
+    single_image = ((pick_frame_from_batch_RGB(batch_data) * 0.5) + 0.5) * 255  # [-1, +1] to [0, 255]
+    # un-normalize
+    return RGB_to_image(single_image)
 
 
 def decentering(image, mean_image):
@@ -98,36 +114,7 @@ def find_best_sample_indexes(loss_per_batch, nindex=4):
     return indexes
 
 
-def draw_images(win_dict, input_batch, recon_batch, setnames):
-    # visualize input / reconstruction pair
-    input_data = pick_frame_from_batch(input_batch)
-    recon_data = pick_frame_from_batch(recon_batch)
-    if optical_flow:
-        viz_input_frame = decentering(input_data, mean_cubes[setnames[target_sample_index]])
-    else:
-        viz_input_frame = decentering(input_data, mean_images[setnames[target_sample_index]])
-    viz_input_data = sample_batch_to_image(input_batch)
-    viz_recon_data = sample_batch_to_image(recon_batch)
-    # viz_recon_frame = decentering(recon_data, mean_images[setnames[target_sample_index]])
-    # viz_recon_error = np.flip(np.abs(input_data - recon_data), 0)  # for reverse y-axis in heat map
-    viz_recon_error = gray_single_to_image(np.abs(input_data - recon_data) * 127.5)
-    if not win_dict['exist']:
-        win_dict['exist'] = True
-        win_dict['input_frame'] = viz.image(viz_input_frame, opts=dict(title='Input'))
-        win_dict['input_data'] = viz.image(viz_input_data, opts=dict(title='Input'))
-        win_dict['recon_data'] = viz.image(viz_recon_data, opts=dict(title='Reconstruction'))
-        # win_dict['recon_frame'] = viz.image(viz_recon_frame, opts=dict(title='Reconstructed video frame'))
-        # win_dict['recon_error'] = viz.heatmap(X=viz_recon_error,
-        #                                       opts=dict(title='Reconstruction error', xmin=0, xmax=2))
-        win_dict['recon_error'] = viz.image(viz_recon_error, opts=dict(title='Reconstruction error'))
-    else:
-        viz.image(viz_input_frame, win=win_dict['input_frame'])
-        viz.image(viz_input_data, win=win_dict['input_data'])
-        viz.image(viz_recon_data, win=win_dict['recon_data'])
-        # viz.image(viz_recon_frame, win=win_dict['recon_frame'])
-        # viz.heatmap(X=viz_recon_error, win=win_dict['recon_error'])
-        viz.image(viz_recon_error, win=win_dict['recon_error'])
-    return win_dict
+
 
 def draw_images(win_dict, input_batch, recon_batch, mean_image):
     # visualize input / reconstruction pair
@@ -158,7 +145,39 @@ def draw_images(win_dict, input_batch, recon_batch, mean_image):
         # viz.image(viz_recon_frame, win=win_dict['recon_frame'])
         # viz.heatmap(X=viz_recon_error, win=win_dict['recon_error'])
         viz.image(viz_recon_error, win=win_dict['recon_error'])
+    return win_dict
 
+def draw_images_RGB(win_dict, input_batch, recon_batch, mean_images, setnames):
+    # visualize input / reconstruction pair
+    input_data = pick_frame_from_batch_RGB(input_batch)
+    recon_data = pick_frame_from_batch_RGB(recon_batch)
+    if optical_flow:
+        viz_input_frame = decentering(input_data, mean_cubes[setnames[target_sample_index]])
+    else:
+        viz_input_frame = decentering(input_data, mean_images)
+    viz_input_data = sample_batch_to_image_RGB(input_batch)
+    viz_recon_data = sample_batch_to_image_RGB(recon_batch)
+    # viz_recon_frame = decentering(recon_data, mean_images[setnames[target_sample_index]])
+    # viz_recon_error = np.flip(np.abs(input_data - recon_data), 0)  # for reverse y-axis in heat map
+    viz_recon_error = RGB_to_image(np.abs(input_data - recon_data) * 127.5)
+
+    if not win_dict['exist']:
+        win_dict['exist'] = True
+        win_dict['input_frame'] = viz.image(viz_input_frame, opts=dict(title='Input'))
+        win_dict['input_data'] = viz.image(viz_input_data, opts=dict(title='Input'))
+        win_dict['recon_data'] = viz.image(viz_recon_data, opts=dict(title='Reconstruction'))
+        # win_dict['recon_frame'] = viz.image(viz_recon_frame, opts=dict(title='Reconstructed video frame'))
+        # win_dict['recon_error'] = viz.heatmap(X=viz_recon_error,
+        #                                       opts=dict(title='Reconstruction error', xmin=0, xmax=2))
+        win_dict['recon_error'] = viz.image(viz_recon_error, opts=dict(title='Reconstruction error'))
+    else:
+        viz.image(viz_input_frame, win=win_dict['input_frame'])
+        viz.image(viz_input_data, win=win_dict['input_data'])
+        viz.image(viz_recon_data, win=win_dict['recon_data'])
+        # viz.image(viz_recon_frame, win=win_dict['recon_frame'])
+        # viz.heatmap(X=viz_recon_error, win=win_dict['recon_error'])
+        viz.image(viz_recon_error, win=win_dict['recon_error'])
+    return win_dict
 
 def draw_images_GAN(win_dict, fake, best_indexes):
     # visualize for GAN (top4 batch)

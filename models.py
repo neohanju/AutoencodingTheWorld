@@ -739,60 +739,87 @@ class AE_BN(nn.Module):  # autoencoder struction from "Learning temporal regular
         self.deconv3.apply(weight_init)
         self.decode_act3.apply(weight_init)
 
-class endoscope_BN(nn.Module):  # autoencoder struction for endoscope
-    def __init__(self, num_in_channels=3, num_filters=32):
+
+class endoscope_BN(nn.Module):  # autoencoder struction from "Learning temporal regularity in video sequences"
+    def __init__(self, num_in_channels, num_filters=256, z_size=32):
+
         super().__init__()
-        self.encoder = nn.Sequential(
-            # expected input: (L) x 101 x 101
-            nn.Conv2d(num_in_channels, num_filters, 5, 2, 0),
-            nn.BatchNorm2d(num_filters),
-            nn.LeakyReLU(0.2, True),
-            nn.Dropout2d(),
-            # state size: (nf) x 49 x 49
-            nn.Conv2d(num_filters, 2 * num_filters, 5, 2, 0),
-            nn.BatchNorm2d(2 * num_filters),
-            nn.LeakyReLU(0.2, True),
-            nn.Dropout2d(),
-            # state size: (2 x nf) x 23 x 23
-            nn.Conv2d(2 * num_filters, 4 * num_filters, 5, 2, 0),
-            nn.BatchNorm2d(4 * num_filters),
-            nn.LeakyReLU(0.2, True),
-            nn.Dropout2d()
-            # state size: (4 x nf) x 10 x 10
-        )
 
-        self.decoder = nn.Sequential(
-            # state size: (4 x nf) x 27 x 27
-            nn.ConvTranspose2d(4 * num_filters, 2 * num_filters, 5, 2, 0),
-            nn.BatchNorm2d(2 * num_filters),
-            nn.LeakyReLU(0.2, True),
-            nn.Dropout2d(),
-            # state size: (2 x nf) x 55 x 55
-            nn.ConvTranspose2d(2 * num_filters, num_filters, 5, 2, 0),
-            nn.BatchNorm2d(num_filters),
-            nn.LeakyReLU(0.2, True),
-            nn.Dropout2d(),
-            # state size: (nf) x 113 x 113
-            nn.ConvTranspose2d(num_filters, num_in_channels, 5, 2, 0),
-            nn.Tanh()
-            # state size: (L) x 227 x 227
-        )
+        # encoder layers
+        #  (batch_size) x 3 x 227 x 227
+        self.conv1 = nn.Conv2d(num_in_channels, num_filters, 11, 4)
+        self.bn1 = nn.BatchNorm2d(num_filters)
+        self.encode_act1 = nn.ReLU(True)
+        # (batch_size) x 256 x 55 x 55
+        self.pool1 = nn.MaxPool2d(2, stride=2, return_indices=True)
+        # (batch_size) x 128 x 27 x 27
+        self.conv2 = nn.Conv2d(num_filters, int(num_filters / 2), 5, 1, 2)
+        self.bn2 = nn.BatchNorm2d(int(num_filters / 2))
+        self.encode_act2 = nn.ReLU(True)
+        # (batch_size) x 128 x 27 x 27
+        self.pool2 = nn.MaxPool2d(2, stride=2, return_indices=True)
+        # (batch_size) x 128 x 13 x 13
+        self.conv3 = nn.Conv2d(int(num_filters / 2), z_size, 3, 1, 1)
+        self.bn3 = nn.BatchNorm2d(z_size)
+        self.encode_act3 = nn.ReLU(True)
+        # (batch_size) x 32 x 13 x 13
 
-        # init weights
+        # decoder layers
+        self.deconv1 = nn.ConvTranspose2d(z_size, int(num_filters / 2), 3, 1, 1)
+        self.dbn1 = nn.BatchNorm2d(int(num_filters / 2))
+        self.decode_act1 = nn.LeakyReLU(0.2, True)
+        # (batch_size) x 128 x 13 x 13
+        self.unpool1 = nn.MaxUnpool2d(2, stride=2)
+        # (batch_size) x 128 x 27 x 27
+        self.deconv2 = nn.ConvTranspose2d(int(num_filters / 2), num_filters, 5, 1, 2)
+        self.dbn2 = nn.BatchNorm2d(num_filters)
+        self.decode_act2 = nn.LeakyReLU(0.2, True)
+        # (batch_size) x 256 x 27 x 27
+        self.unpool2 = nn.MaxUnpool2d(2, stride=2)
+        # (batch_size) x 256 x 55 x 55
+        self.deconv3 = nn.ConvTranspose2d(num_filters, num_in_channels, 11, 4)
+        self.decode_act3 = nn.Tanh()
+        # (batch_size) x 3 x 227 x 227
+
         self.weight_init()
 
     def encode(self, x):
-        return self.encoder(x)
+        encode1 = self.encode_act1(self.bn1(self.conv1(x)))
+        encode2, index1 = self.pool1(encode1)
+        encode3, index2 = self.pool2(self.encode_act2(self.bn2(self.conv2(encode2))))
+        code = self.encode_act3(self.bn3(self.conv3(encode3)))
+        size1, size2 = encode1.size()[3], encode2.size()[3]
+        return code, index1, size1, index2, size2
 
-    def decode(self, z):
-        return self.decoder(z)
+    def decode(self, code, index1, size1, index2, size2):
+        decode1 = self.unpool1(self.decode_act1(self.dbn1(self.deconv1(code))), index2,
+                               output_size=torch.Size([-1, -1, size2, size2]))
+        decode2 = self.unpool2(self.decode_act2(self.dbn2(self.deconv2(decode1))), index1,
+                               output_size=torch.Size([-1, -1, size1, size1]))
+        return self.decode_act3(self.deconv3(decode2))
 
     def forward(self, x):
-        z = self.encode(x)
-        return self.decode(z)
+        code, index1, size1, index2, size2 = self.encode(x)
+        #return self.decode(code, index1, size1, index2, size2), code, None
+        return self.decode(code, index1, size1, index2, size2)
 
     def weight_init(self):
-        self.encoder.apply(weight_init)
-        self.decoder.apply(weight_init)
+        self.conv1.apply(weight_init)
+        self.encode_act1.apply(weight_init)
+        self.pool1.apply(weight_init)
+        self.conv2.apply(weight_init)
+        self.encode_act2.apply(weight_init)
+        self.pool2.apply(weight_init)
+        self.conv3.apply(weight_init)
+        self.encode_act3.apply(weight_init)
+
+        self.deconv1.apply(weight_init)
+        self.decode_act1.apply(weight_init)
+        self.unpool1.apply(weight_init)
+        self.deconv2.apply(weight_init)
+        self.decode_act2.apply(weight_init)
+        self.unpool2.apply(weight_init)
+        self.deconv3.apply(weight_init)
+        self.decode_act3.apply(weight_init)
 #()()
 #('')HAANJU.YOO
