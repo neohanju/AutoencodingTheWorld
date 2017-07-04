@@ -87,5 +87,6 @@ print("done")
 # save npy for sample
 # save png for checking
 
-# Je Yeol Lee \[T]/ Jolly Co-operation
+# Je Yeol Lee \[T]/
+# Jolly Co-operation
 

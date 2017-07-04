@@ -97,7 +97,7 @@ win_images = dict(
 dataset_paths = options.data_root
 mean_image_path = os.path.join(dataset_paths, "mean_image.npy")
 # todo : get video_ids by options
-video_ids=["video_2"]
+video_ids=["video_test"]
 mean_image = np.load(mean_image_path)
 dataset = RGBImageSets(dataset_paths, video_ids=video_ids)
 dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=1, shuffle=False,
@@ -160,7 +160,7 @@ cnt_cost = 0
 
 mean = 0
 
-
+cost_npy = []
 for i, data in enumerate(dataloader, 0):
     # todo ---
     dataset_name = "endoscope"
@@ -204,6 +204,7 @@ for i, data in enumerate(dataloader, 0):
 
     # save cost
     util.file_print_list(cost_file_path, [cur_cost], overwrite=False)
+    cost_npy.append(cur_cost)
 
     # save latent variables
     #np_mu = mu_batch.data[0, :, :, :].cpu().numpy().flatten()
@@ -220,6 +221,8 @@ for i, data in enumerate(dataloader, 0):
                                                      ylabel='reconstruction cost', xlabel='sample index')
         time.sleep(0.005)  # for reliable drawing
 
+np.save(os.path.join(save_path, '%s_video_%s_%s.npy'
+                                      % (dataset_name[0], video_name[0], saved_options.model)),cost_npy)
 print(mean)
 # ()()
 # ('')HAANJU.YOO
