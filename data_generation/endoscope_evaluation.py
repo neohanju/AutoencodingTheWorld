@@ -10,6 +10,8 @@ recon_cost = np.load(os.path.join(cost_path, "e_video_v_endoscope-BN.npy"))
 
 
 
+
+
 #=======================================================================================================================
 #   Visualize result
 #=======================================================================================================================
@@ -38,12 +40,14 @@ for j in range(0, len(min_max_recon_cost)):
     if section_min > min_max_recon_cost[j][1]:
         section_min = min_max_recon_cost[j][1]
     print('%d section - Max : %.02f \t Min : %0.2f' % (j+1, min_max_recon_cost[j][0], min_max_recon_cost[j][1]))
+print('Min of all sections : %.02f' % section_min)
+
 
 num_of_frame_reduced = 0
 for i in range(0, len(recon_cost)):
     if recon_cost[i] < section_min:
         num_of_frame_reduced = num_of_frame_reduced + 1
-print("Number of frame reduced : %d \t Decreased Percent : %.02f" % (num_of_frame_reduced,num_of_frame_reduced/len(recon_cost)))
+print("\nNumber of frame reduced : %d \t Decreased Percent : %.02f" % (num_of_frame_reduced, num_of_frame_reduced/len(recon_cost)))
 
 
 # Draw a Graph.

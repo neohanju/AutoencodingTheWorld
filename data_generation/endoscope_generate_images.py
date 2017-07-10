@@ -6,8 +6,8 @@ import numpy as np
 import glob
 
 FFMPEG_BIN = "ffmpeg"
-target_rows = 257
-target_cols = 257
+target_rows = 255
+target_cols = 255
 def make_dir(path):
     # if there is no directory, make a directory.
     if not os.path.exists(path):
@@ -17,7 +17,7 @@ def make_dir(path):
 
 print('Extract images...')
 #back young ju (01104575) 19 Jun 13_1
-filename = "video_test.mpg"
+filename = "video_train.mpg"
 folder_path ="/home/leejeyeol/Data/endoscope_only"
 
 # output directoryd

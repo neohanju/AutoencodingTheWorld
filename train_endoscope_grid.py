@@ -7,8 +7,9 @@ import torch.utils.data
 import torch.optim as optim
 from torch.autograd import Variable
 from models import init_model_and_loss
-from data import RGBImageSets
+from data import Grid_RGBImageSets
 import utils as util
+import numpy as np
 
 
 def debug_print(arg):
@@ -38,7 +39,7 @@ parser.add_argument('--max_iter', type=int, default=150000, help='number of iter
 parser.add_argument('--dataset', type=str, required=True, nargs='+',
                     help="all | avenue | ped1 | ped2 | enter | exit. 'all' means using entire data")
 parser.add_argument('--data_root', type=str, required=True, help='path to base folder of entire dataset')
-parser.add_argument('--image_size', type=int, default=227, help='input image size (width=height). default=227')
+parser.add_argument('--image_size', type=int, default=224, help='input image size (width=height). default=224')
 parser.add_argument('--workers', type=int, default=2, help='number of data loading workers')
 # optimization related --------------------------------------------------------
 parser.add_argument('--optimizer', type=str, default='adagrad',
@@ -160,7 +161,7 @@ win_images = dict(
 # =============================================================================
 # set data loader
 dataset_paths = options.data_root
-dataset = RGBImageSets(dataset_paths, centered=False, video_ids=["video_train"])
+dataset = Grid_RGBImageSets(dataset_paths, centered=False, video_ids=["video_train"])
 dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=True,
                                          num_workers=options.workers)
 
@@ -168,8 +169,8 @@ debug_print('Data loader is ready')
 
 # streaming buffer
 tm_buffer_set = time.time()
-input_batch = torch.FloatTensor(options.batch_size, options.nc, options.image_size, options.image_size)
-recon_batch = torch.FloatTensor(options.batch_size, options.nc, options.image_size, options.image_size)
+input_batch = torch.FloatTensor(options.batch_size, options.nc, 56, 56)
+recon_batch = torch.FloatTensor(options.batch_size, options.nc, 56, 56)
 mu_batch = torch.FloatTensor(options.batch_size, options.z_size[0], options.z_size[1], options.z_size[2])
 logvar_batch = torch.FloatTensor(options.batch_size, options.z_size[0], options.z_size[1], options.z_size[2])
 debug_print('Stream buffers are set: %.3f sec elapsed' % (time.time() - tm_buffer_set))
@@ -197,6 +198,33 @@ util.target_frame_index = int(options.nc / 2)
 util.mean_images = dataset.get_mean_image()
 debug_print('Utility library is ready')
 
+mean_image_path = os.path.join(dataset_paths, "mean_image.npy")
+mean_image = np.load(mean_image_path)
+
+# todo -
+grid_unit = 4
+grid_size = 56
+temp = np.zeros((3, grid_size, grid_size))
+for grid_number in range(0, 25):
+    if grid_number < (grid_unit * grid_unit):
+        quo_grid_number = int(grid_number / grid_unit)
+        rem_grid_number = grid_number % grid_unit
+
+        grid_x = int(grid_size * quo_grid_number)
+        grid_y = int(grid_size * rem_grid_number)
+    else:
+        sub_quo_grid_number = int((grid_number - (grid_unit * grid_unit)) / (grid_unit - 1))
+        sub_rem_grid_number = (grid_number - (grid_unit * grid_unit)) % (grid_unit - 1)
+
+        grid_x = int(grid_size * sub_quo_grid_number + grid_size / 2)
+        grid_y = int(grid_size * sub_rem_grid_number + grid_size / 2)
+
+
+    temp = temp + mean_image[:, grid_x:grid_x + grid_size, grid_y:grid_y + grid_size]
+mean_image = temp/25
+
+
+dataset_name = "endoscope"
 
 # =============================================================================
 # MODEL & LOSS FUNCTION
@@ -256,8 +284,7 @@ print("start epoch")
 # main loop of training
 for epoch in range(options.epochs):
     tm_cur_epoch_start = tm_cur_iter_start = time.time()
-    for i, data in enumerate(dataloader, 1):
-
+    for i, (data, grid_number) in enumerate(dataloader, 1):
         num_iters_in_epoch = i
 
         # ============================================
@@ -300,7 +327,7 @@ for epoch in range(options.epochs):
         tm_visualize_start = time.time()
         if options.display:
             # draw input/recon images
-            win_images = util.draw_images(win_images, data, recon_batch.data, mean_image=util.mean_images)
+            win_images = util.draw_images_RGB(win_images, data, recon_batch.data, mean_image, dataset_name)
         tm_visualize_consume = time.time() - tm_visualize_start
 
         # print iteration's summary

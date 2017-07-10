@@ -95,6 +95,31 @@ def decentering(image, mean_image):
         mean_image = mean_image[5]
     return gray_single_to_image(image * 255 + mean_image)
 
+def decentering_grid(image, mean_image, grid_number, grid_unit = 4):
+    grid_size = int(image.shape[1] / grid_unit)
+
+    if grid_number < (grid_unit * grid_unit):
+        quo_grid_number = int(grid_number / grid_unit)
+        rem_grid_number = grid_number % grid_unit
+
+        grid_x = int(grid_size * quo_grid_number)
+        grid_y = int(grid_size * rem_grid_number)
+    else:
+        sub_quo_grid_number = int((grid_number - (grid_unit * grid_unit)) / (grid_unit - 1))
+        sub_rem_grid_number = (grid_number - (grid_unit * grid_unit)) % (grid_unit - 1)
+
+        grid_x = int(grid_size * sub_quo_grid_number + grid_size / 2)
+        grid_y = int(grid_size * sub_rem_grid_number + grid_size / 2)
+
+        mean_image = mean_image[:, grid_x:grid_x + grid_size, grid_y:grid_y + grid_size]
+
+    if mean_image.ndim == 3:
+        return image * 255 + mean_image
+    elif mean_image.ndim > 3:
+        mean_image = mean_image[5]
+    return gray_single_to_image(image * 255 + mean_image)
+
+
 
 def find_best_sample_indexes(loss_per_batch, nindex=4):
     indexes = []
@@ -178,6 +203,8 @@ def draw_images_RGB(win_dict, input_batch, recon_batch, mean_images, setnames):
         # viz.heatmap(X=viz_recon_error, win=win_dict['recon_error'])
         viz.image(viz_recon_error, win=win_dict['recon_error'])
     return win_dict
+
+
 
 def draw_images_GAN(win_dict, fake, best_indexes):
     # visualize for GAN (top4 batch)

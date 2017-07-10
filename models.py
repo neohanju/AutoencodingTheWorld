@@ -746,7 +746,7 @@ class endoscope_BN(nn.Module):  # autoencoder struction from "Learning temporal 
         super().__init__()
 
         # encoder layers
-        #  (batch_size) x 3 x 227 x 227
+        #  (batch_size) x 3 x 224 x 224
         self.conv1 = nn.Conv2d(num_in_channels, num_filters, 11, 4)
         self.bn1 = nn.BatchNorm2d(num_filters)
         self.encode_act1 = nn.ReLU(True)
@@ -777,7 +777,7 @@ class endoscope_BN(nn.Module):  # autoencoder struction from "Learning temporal 
         # (batch_size) x 256 x 27 x 27
         self.unpool2 = nn.MaxUnpool2d(2, stride=2)
         # (batch_size) x 256 x 55 x 55
-        self.deconv3 = nn.ConvTranspose2d(num_filters, num_in_channels, 11, 4)
+        self.deconv3 = nn.ConvTranspose2d(num_filters, num_in_channels, 11, 4, 0, 1)
         self.decode_act3 = nn.Tanh()
         # (batch_size) x 3 x 227 x 227
 

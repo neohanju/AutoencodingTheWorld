@@ -3,6 +3,82 @@ import glob
 import torch.utils.data
 import numpy as np
 
+class Grid_RGBImageSets(torch.utils.data.Dataset):
+    def __init__(self, path, centered=False, video_ids=None, grid_unit=4):
+        super().__init__()
+        self.centered = centered
+        self.grid_unit = grid_unit
+        self.add_string = lambda a, b: a + b
+
+        assert os.path.exists(path)
+        self.base_path = path
+
+        self.mean_image = self.get_mean_image()
+        self.paths = []
+        if video_ids is None:
+            self.paths = glob.glob(self.base_path + "/*/")
+        else:
+            for video_id in video_ids:
+                self.paths.append(os.path.join(self.base_path, video_id))
+        self.paths.sort()
+        print(self.paths)
+
+        self.file_paths = []
+        for path in self.paths:
+            for grid in range(0, (self.grid_unit *self.grid_unit)+((self.grid_unit -1)*(self.grid_unit -1))):
+                cur_file_paths = glob.glob(path + '/*.npy')
+                cur_file_paths.sort()
+                self.file_paths += [realpath +"%"+ str(grid) for realpath in cur_file_paths]
+
+
+    def __len__(self):
+        return len(self.file_paths)
+
+    def __getitem__(self, item):
+        paths = self.file_paths[item].split('%')
+        grid_number = paths[-1]
+        self.file_paths[item] = self.file_paths[item].replace('%'+grid_number,"")
+        grid_number = int(grid_number)
+
+        loaded_image = np.load(self.file_paths[item])
+        grid_size = int(loaded_image.shape[1]/self.grid_unit)
+
+
+
+        if grid_number < (self.grid_unit*self.grid_unit):
+            quo_grid_number = int(grid_number / self.grid_unit)
+            rem_grid_number = grid_number % self.grid_unit
+
+            grid_x = int(grid_size * quo_grid_number)
+            grid_y = int(grid_size * rem_grid_number)
+        else:
+            sub_quo_grid_number = int((grid_number - (self.grid_unit * self.grid_unit)) / (self.grid_unit - 1))
+            sub_rem_grid_number = (grid_number - (self.grid_unit * self.grid_unit)) % (self.grid_unit - 1)
+
+            grid_x = int(grid_size * sub_quo_grid_number + grid_size/2)
+            grid_y = int(grid_size * sub_rem_grid_number + grid_size/2)
+
+        if self.centered:
+            data = torch.FloatTensor(loaded_image)
+            data = data[:, grid_x:grid_x+grid_size, grid_y:grid_y+grid_size]
+        else:
+            data = torch.FloatTensor(loaded_image)
+            data = data[:, grid_x:grid_x+grid_size, grid_y:grid_y+grid_size]
+            data = data - self.mean_image[:, grid_x:grid_x+grid_size, grid_y:grid_y+grid_size]
+            data.div_(255)
+        return data, grid_number
+
+    def get_decenterd_data(self, centered_data):
+        result = centered_data.mul_(255) + self.mean_image
+        result = result.byte()
+        return result
+
+    def get_mean_image(self):
+        mean_image = np.load(os.path.join(self.base_path, "mean_image.npy"))
+        mean_image = torch.from_numpy(mean_image).float()
+        return mean_image
+
+
 
 class RGBImageSets(torch.utils.data.Dataset):
     def __init__(self, path, centered=False, video_ids=None):

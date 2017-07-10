@@ -44,6 +44,19 @@ parser.add_argument('--debug_print', action='store_true', default=False, help='p
 
 options = parser.parse_args()
 
+# todo : add to test
+cost_path = "/home/leejeyeol/git/AutoencodingTheWorld/training_result/endoscope/recon_costs"
+ground_truth = np.load(os.path.join(cost_path, "Kim Jun Hong_ground_truth.npy"))
+ground_truth[1] = 1
+
+# =======================================
+
+
+
+
+
+
+
 # seed
 if options.random_seed is None:
     options.random_seed = random.randint(1, 10000)
@@ -97,10 +110,10 @@ win_images = dict(
 dataset_paths = options.data_root
 mean_image_path = os.path.join(dataset_paths, "mean_image.npy")
 # todo : get video_ids by options
-video_ids=["video_test"]
+video_ids=["video_train"]
 mean_image = np.load(mean_image_path)
 dataset = RGBImageSets(dataset_paths, video_ids=video_ids)
-dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=1, shuffle=False,
+dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=64, shuffle=False,
                                          num_workers=1, pin_memory=True)
 
 # streaming buffer
@@ -162,7 +175,6 @@ mean = 0
 
 cost_npy = []
 for i, data in enumerate(dataloader, 0):
-    # todo ---
     dataset_name = "endoscope"
     video_name = video_ids[0]
     if prev_dataset_name != dataset_name or prev_video_name != video_name:
@@ -217,8 +229,21 @@ for i, data in enumerate(dataloader, 0):
         win_recon_cost = util.viz_append_line_points(win=win_recon_cost,
                                                      lines_dict=dict(recon=cur_cost, zero=0),
                                                      x_pos=cnt_cost,
-                                                     title='%s: video_%s' % (dataset_name[0], video_name[0]),
+                                                     title='%s: video_%s' % (dataset_name, video_name),
                                                      ylabel='reconstruction cost', xlabel='sample index')
+        if ground_truth[i] == 1:
+            in_img = util.pick_frame_from_batch_RGB(input_batch)
+            re_img = util.pick_frame_from_batch_RGB(recon_batch)
+            in_img = util.sample_batch_to_image_RGB(input_batch)
+            re_img = util.sample_batch_to_image_RGB(recon_batch)
+            re_img.shape = (227, 227, 3)
+            in_img.shape = (227, 227, 3)
+
+            in_img2 = Image.fromarray(in_img,mode="RGB")
+            re_img2 = Image.fromarray(re_img,mode="RGB")
+            in_img2.save("/home/leejeyeol/git/AutoencodingTheWorld/training_result/endoscope/ShowImages/%06d_input.png"%i)
+            re_img2.save("/home/leejeyeol/git/AutoencodingTheWorld/training_result/endoscope/ShowImages/%06d_recon.png"%i)
+
         time.sleep(0.005)  # for reliable drawing
 
 np.save(os.path.join(save_path, '%s_video_%s_%s.npy'

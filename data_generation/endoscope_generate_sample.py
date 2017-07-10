@@ -4,16 +4,16 @@ import glob
 from PIL import Image
 
 
-filenames = ["video_test", "video_train"]
+filenames = ["video_train"]
 folder_path = '/home/leejeyeol/Data/endoscope_only'
 save_path = '/home/leejeyeol/Data/endoscope_only/frames'
 
 # image size
-x_size = 257
-y_size = 257
+x_size = 255
+y_size = 255
 
-x_crop_size = 227
-y_crop_size = 227
+x_crop_size = 224
+y_crop_size = 224
 
 
 def remove_part_of_image(img, x, y, w, h):

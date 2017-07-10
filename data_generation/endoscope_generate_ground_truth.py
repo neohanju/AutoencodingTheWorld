@@ -13,8 +13,8 @@ def scale_to_frames(value, before, after):
 
 
 # Enter variables corresponding to dataset.
-start_time = "0:11:15"
-end_time = "12:47:00"
+start_time = "0:11:24"
+end_time = "12:46:41"
 num_of_frames = int(59630/2)
 name = "Kim Jun Hong"
 abnormal_list = ["1:42:54", "1:48:47",
