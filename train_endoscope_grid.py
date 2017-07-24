@@ -61,7 +61,7 @@ parser.add_argument('--save_interval', type=int, default=1,
                     help='network saving interval w.r.t. epoch number. default=100')
 parser.add_argument('--save_path', type=str, default='./training_result/endoscope',
                     help='path to trained network. default=./training_result')
-parser.add_argument('--save_name', type=str, default='endoscope', help='name for network saving')
+parser.add_argument('--save_name', type=str, default='endoscope_grid', help='name for network saving')
 # ETC -------------------------------------------------------------------------
 parser.add_argument('--random_seed', type=int, help='manual seed')
 parser.add_argument('--debug_print', action='store_true', default=False, help='print debug information')
@@ -309,7 +309,7 @@ for epoch in range(options.epochs):
         recon_batch = model(input_batch)
 
         # backward
-        loss, loss_detail = our_loss.calculate(recon_batch, input_batch, options)
+        loss, loss_detail, max_loss, mean_loss, min_loss, loss_list = our_loss.calculate(recon_batch, input_batch)
         loss.backward()
 
         # update

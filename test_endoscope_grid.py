@@ -6,9 +6,10 @@ import torch.utils.data
 import numpy as np
 from torch.autograd import Variable
 from models import init_model_and_loss
-from data import RGBImageSets
+from data import Grid_RGBImageSets
 import utils as util
 from PIL import Image
+
 
 
 
@@ -110,18 +111,43 @@ win_images = dict(
 dataset_paths = options.data_root
 mean_image_path = os.path.join(dataset_paths, "mean_image.npy")
 # todo : get video_ids by options
-video_ids=["video_test2"]
+video_ids=["video_test"]
 mean_image = np.load(mean_image_path)
-dataset = RGBImageSets(dataset_paths, video_ids=video_ids)
-dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=1, shuffle=False,
+
+# todo -
+grid_unit = 4
+grid_size = 56
+temp = np.zeros((3, grid_size, grid_size))
+for grid_number in range(0, 25):
+    if grid_number < (grid_unit * grid_unit):
+        quo_grid_number = int(grid_number / grid_unit)
+        rem_grid_number = grid_number % grid_unit
+
+        grid_x = int(grid_size * quo_grid_number)
+        grid_y = int(grid_size * rem_grid_number)
+    else:
+        sub_quo_grid_number = int((grid_number - (grid_unit * grid_unit)) / (grid_unit - 1))
+        sub_rem_grid_number = (grid_number - (grid_unit * grid_unit)) % (grid_unit - 1)
+
+        grid_x = int(grid_size * sub_quo_grid_number + grid_size / 2)
+        grid_y = int(grid_size * sub_rem_grid_number + grid_size / 2)
+
+    temp = temp + mean_image[:,
+                  grid_x : grid_x + grid_size,
+                  grid_y : grid_y + grid_size]
+mean_image = temp/25
+
+
+dataset = Grid_RGBImageSets(dataset_paths, centered=False, video_ids=video_ids)
+dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=25, shuffle=False,
                                          num_workers=1, pin_memory=True)
 
 # streaming buffer
 tm_buffer_set = time.time()
-input_batch = torch.FloatTensor(1, saved_options.nc, saved_options.image_size, saved_options.image_size)
-recon_batch = torch.FloatTensor(1, saved_options.nc, saved_options.image_size, saved_options.image_size)
-mu_batch = torch.FloatTensor(1, options.z_size[0], options.z_size[1], options.z_size[2])
-logvar_batch = torch.FloatTensor(1, options.z_size[0], options.z_size[1], options.z_size[2])
+input_batch = torch.FloatTensor(25, saved_options.nc, grid_size, grid_size)
+recon_batch = torch.FloatTensor(25, saved_options.nc, grid_size, grid_size)
+mu_batch = torch.FloatTensor(25, options.z_size[0], options.z_size[1], options.z_size[2])
+logvar_batch = torch.FloatTensor(25, options.z_size[0], options.z_size[1], options.z_size[2])
 debug_print('Stream buffers are set: %.3f sec elapsed' % (time.time() - tm_buffer_set))
 
 if cuda_available:
@@ -174,12 +200,16 @@ cnt_cost = 0
 mean = 0
 
 cost_npy = []
-for i, data in enumerate(dataloader, 0):
+mse_list = []
+
+
+for i, (data, grid_number) in enumerate(dataloader, 0):
     dataset_name = "endoscope"
     video_name = video_ids[0]
     if prev_dataset_name != dataset_name or prev_video_name != video_name:
         # new video is started
         print("Testing on '%s' dataset video '%s'... " % (dataset_name, video_name))
+        print(len(dataloader))
 
         # create new cost file
         cost_file_path = os.path.join(save_path, '%s_video_%s_%s.txt'
@@ -196,27 +226,26 @@ for i, data in enumerate(dataloader, 0):
 
         prev_dataset_name, prev_video_name = dataset_name, video_name
         cnt_cost = 0
+        frame_MSE_container = 0
 
     # data load
     input_batch.data.copy_(data)
 
     # forward
+    model.zero_grad()
     recon_batch = model(input_batch)
-    loss, loss_detail = our_loss.calculate(recon_batch, input_batch, saved_options, mu_batch, logvar_batch)
+    loss, loss_detail, max_loss, mean_loss, min_loss, loss_list = our_loss.calculate(recon_batch, input_batch)
 
     cur_cost = loss_detail['recon']
     mean = mean * ((cnt_cost) / (cnt_cost + 1)) + (cur_cost / (cnt_cost + 1))
     cnt_cost += 1
-
-    print('%s_video_%s:%04d, cost = %.3f, mean = %.3f' % (dataset_name, video_name, cnt_cost, cur_cost, mean))
-
-
-
-
-
-    # save cost
     util.file_print_list(cost_file_path, [cur_cost], overwrite=False)
     cost_npy.append(cur_cost)
+    mse_list.append(loss_list)
+    print('%s_video_%s:%07d\t cost = %.3f \t max = %.3f\t min = %.3f\t mean = %.3f\t total_mean = %.3f'
+          % (dataset_name, video_name, cnt_cost, cur_cost, max_loss, min_loss, mean_loss, mean))
+  #      frame_MSE_container = 0
+
 
     # save latent variables
     #np_mu = mu_batch.data[0, :, :, :].cpu().numpy().flatten()
@@ -225,29 +254,72 @@ for i, data in enumerate(dataloader, 0):
 
     # visualization
     if options.display:
-        win_images = util.draw_images_RGB(win_images, input_batch, recon_batch.data, mean_image, setnames=dataset_name)
+        win_images = util.draw_images_RGB(win_images, data, recon_batch.data, mean_image, setnames=dataset_name)
         win_recon_cost = util.viz_append_line_points(win=win_recon_cost,
                                                      lines_dict=dict(recon=cur_cost, zero=0),
                                                      x_pos=cnt_cost,
                                                      title='%s: video_%s' % (dataset_name, video_name),
                                                      ylabel='reconstruction cost', xlabel='sample index')
-        if ground_truth[i] == 1:
-            in_img = util.pick_frame_from_batch_RGB(input_batch)
-            re_img = util.pick_frame_from_batch_RGB(recon_batch)
-            in_img = util.sample_batch_to_image_RGB(input_batch)
-            re_img = util.sample_batch_to_image_RGB(recon_batch)
-            re_img.shape = (227, 227, 3)
-            in_img.shape = (227, 227, 3)
 
-            in_img2 = Image.fromarray(in_img,mode="RGB")
-            re_img2 = Image.fromarray(re_img,mode="RGB")
-            in_img2.save("/home/leejeyeol/git/AutoencodingTheWorld/training_result/endoscope/ShowImages/%06d_input.png"%i)
-            re_img2.save("/home/leejeyeol/git/AutoencodingTheWorld/training_result/endoscope/ShowImages/%06d_recon.png"%i)
+        recon_container = np.zeros((3, grid_size*grid_unit, grid_size*grid_unit))
+        recon_container_2nd = np.zeros((3,grid_size*(grid_unit-1), grid_size*(grid_unit-1)))
 
+        for x in range(0, grid_unit):
+            for y in range(0, grid_unit):
+                recon_container[:,
+                y*grid_size:y*grid_size+grid_size,
+                x*grid_size:x*grid_size+grid_size] = \
+                    recon_batch.data[x+grid_unit*y].view(3, grid_size, grid_size).cpu().numpy()
+
+
+        for x in range(0, (grid_unit-1)):
+            for y in range(0, (grid_unit-1)):
+                recon_container_2nd[:,
+                int((y*grid_size)):int((y*grid_size)+grid_size),
+                int((x*grid_size)):int((x*grid_size)+grid_size)] = \
+                    recon_batch.data[grid_unit*grid_unit+(x+((grid_unit-1)*y))].view((3, grid_size, grid_size)).cpu().numpy()
+
+
+        recon_container[:,
+        int(grid_size/2):int(grid_size/2+grid_size*(grid_unit-1)),
+        int(grid_size/2):int(grid_size/2+grid_size*(grid_unit-1))] = \
+            (recon_container_2nd+recon_container[:,
+                                 int(grid_size/2):int(grid_size/2+grid_size*(grid_unit-1)),
+                                 int(grid_size/2):int(grid_size/2+grid_size*(grid_unit-1))])/2
+
+        recon_container = np.uint8(((recon_container + 1) / 2) * 255)
+        Image.fromarray(np.transpose(recon_container, (1, 2, 0)), 'RGB').save(
+            "/home/leejeyeol/git/AutoencodingTheWorld/training_result/endoscope/ShowImages/%06d.png" % i)
+
+        '''
+        recon_container = np.uint8(((recon_container+1)/2)*255)
+        recon_container_2nd = np.uint8(((recon_container_2nd+1)/2)*255)
+        Image.fromarray(np.transpose(recon_container, (1,2,0)), 'RGB').save("/home/leejeyeol/git/AutoencodingTheWorld/training_result/endoscope/ShowImages/%06d_recon_1.png"%i)
+        Image.fromarray(np.transpose(recon_container_2nd, (1,2,0)), 'RGB').save("/home/leejeyeol/git/AutoencodingTheWorld/training_result/endoscope/ShowImages/%06d_recon_2.png"%i)
+        '''
+
+
+
+        '''
+        in_img = util.pick_frame_from_batch_RGB(input_batch)
+        re_img = util.pick_frame_from_batch_RGB(recon_batch)
+        in_img = util.sample_batch_to_image_RGB(input_batch)
+        re_img = util.sample_batch_to_image_RGB(recon_batch)
+        re_img.shape = (grid_size, grid_size, 3)
+        in_img.shape = (grid_size, grid_size, 3)
+
+        in_img2 = Image.fromarray(in_img, mode="RGB")
+        re_img2 = Image.fromarray(re_img, mode="RGB")
+        in_img2.save("/home/leejeyeol/git/AutoencodingTheWorld/training_result/endoscope/ShowImages/%06d_input.png"%i)
+        re_img2.save("/home/leejeyeol/git/AutoencodingTheWorld/training_result/endoscope/ShowImages/%06d_recon.png"%i)
+        '''
         time.sleep(0.005)  # for reliable drawing
 
-np.save(os.path.join(save_path, '%s_video_%s_%s.npy'
+np.save(os.path.join(save_path, '%s_%s_%s.npy'
                                       % (dataset_name[0], video_name[0], saved_options.model)),cost_npy)
+np.save(os.path.join(save_path, '%s_%s_%s_grid_mse_list.npy'
+                                      % (dataset_name[0], video_name[0], saved_options.model)),mse_list)
 print(mean)
+print(os.path.join(save_path, '%s_video_%s_%s.npy' % (dataset_name[0], video_name[0], saved_options.model)))
 # ()()
 # ('')HAANJU.YOO

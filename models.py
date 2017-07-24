@@ -15,7 +15,7 @@ def weight_init(module):
         module.bias.data.fill_(0)
 
 
-def init_model_and_loss(options, cuda=False, margin_loss=False):
+def init_model_and_loss(options, cuda=False, margin_loss=False, grid_loss=True):
 
     # create model instance
     if 'AE-LTR' == options.model:
@@ -49,6 +49,11 @@ def init_model_and_loss(options, cuda=False, margin_loss=False):
         loss = MarginLoss(cuda)
     else:
         loss = OurLoss(cuda)
+
+    if grid_loss:
+        loss = GridMSELoss(cuda)
+        print("gridLoss = True")
+
     return model, loss
 
 
@@ -178,6 +183,40 @@ class MarginLoss:
 
         return total_loss, loss_info, max_mse, mean_mse
 
+class GridMSELoss:
+    def __init__(self, cuda=False):
+        self.reconstruction_criteria = nn.MSELoss(size_average=False)
+
+         # l1_regularize_criteria = nn.L1Loss(size_average=False)
+        # l1_target = Variable([])
+        if cuda and torch.cuda.is_available():
+            self.reconstruction_criteria.cuda()
+
+    def calculate(self, recon_x, x):
+        # thanks to Autograd, you can train the net by just summing-up all losses and propagating them
+        size_mini_batch = x.data.size()[0]
+
+        # MSE
+        mse_batch = x.sub(recon_x).pow(2)
+        max_mse = 0
+        min_mse = 100
+        mse_list = []
+        for i in range(size_mini_batch):
+            cur_mse = mse_batch[i, :, :, :].sum().data[0]
+            if max_mse < cur_mse:
+                max_mse = cur_mse
+            if min_mse > cur_mse:
+                min_mse = cur_mse
+            mse_list.append(cur_mse)
+
+        mean_mse = mse_batch.sum().div(size_mini_batch).data[0]
+
+        recon_loss = self.reconstruction_criteria(recon_x, x).div_(size_mini_batch)
+        total_loss = recon_loss
+        loss_info = {'recon': recon_loss.data[0]}
+        loss_info['total'] = total_loss.data[0]
+
+        return total_loss, loss_info, max_mse, mean_mse, min_mse, mse_list
 
 # =============================================================================
 # Autoencoder [original]

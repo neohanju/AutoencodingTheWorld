@@ -13,8 +13,17 @@ def scale_to_frames(value, before, after):
 
 
 # Enter variables corresponding to dataset.
-start_time = "0:11:24"
-end_time = "12:46:41"
+'''
+start_time = "0:00:00"
+end_time = "9:45:00"
+num_of_frames = 29815
+name = "Oh Gyeng Hui"
+abnormal_list = ["5:55:01", "6:11:27",
+                 "6:13:32", "7:22:50",
+                 "7:28:02", "7:33:35"]
+'''
+start_time = "0:11:23"
+end_time = "12:46:49"
 num_of_frames = int(59630/2)
 name = "Kim Jun Hong"
 abnormal_list = ["1:42:54", "1:48:47",
@@ -57,7 +66,8 @@ for i in abnormal_list:
         flag = True
 
 
-
+print("number of frame : %d" % num_of_frames)
+print("%s_ground_truth.npy" % name)
 np.save(save_path+"/%s_ground_truth.npy" % name, grount_truth)
 
 # Je Yeol Lee \[T]/

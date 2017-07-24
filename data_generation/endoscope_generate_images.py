@@ -17,7 +17,7 @@ def make_dir(path):
 
 print('Extract images...')
 #back young ju (01104575) 19 Jun 13_1
-filename = "video_train.mpg"
+filename = "video_test2.mpg"
 folder_path ="/home/leejeyeol/Data/endoscope_only"
 
 # output directoryd

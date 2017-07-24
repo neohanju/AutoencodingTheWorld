@@ -28,7 +28,8 @@ class Grid_RGBImageSets(torch.utils.data.Dataset):
             for grid in range(0, (self.grid_unit *self.grid_unit)+((self.grid_unit -1)*(self.grid_unit -1))):
                 cur_file_paths = glob.glob(path + '/*.npy')
                 cur_file_paths.sort()
-                self.file_paths += [realpath +"%"+ str(grid) for realpath in cur_file_paths]
+                self.file_paths += [realpath +"%"+ (("%02d")%(grid)) for realpath in cur_file_paths]
+        self.file_paths.sort()
 
 
     def __len__(self):
@@ -37,7 +38,7 @@ class Grid_RGBImageSets(torch.utils.data.Dataset):
     def __getitem__(self, item):
         paths = self.file_paths[item].split('%')
         grid_number = paths[-1]
-        self.file_paths[item] = self.file_paths[item].replace('%'+grid_number,"")
+        self.file_paths[item] = self.file_paths[item].replace('%'+grid_number, "")
         grid_number = int(grid_number)
 
         loaded_image = np.load(self.file_paths[item])
