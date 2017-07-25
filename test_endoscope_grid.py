@@ -209,7 +209,7 @@ for i, (data, grid_number) in enumerate(dataloader, 0):
     if prev_dataset_name != dataset_name or prev_video_name != video_name:
         # new video is started
         print("Testing on '%s' dataset video '%s'... " % (dataset_name, video_name))
-        print(len(dataloader))
+
 
         # create new cost file
         cost_file_path = os.path.join(save_path, '%s_video_%s_%s.txt'
@@ -242,8 +242,8 @@ for i, (data, grid_number) in enumerate(dataloader, 0):
     util.file_print_list(cost_file_path, [cur_cost], overwrite=False)
     cost_npy.append(cur_cost)
     mse_list.append(loss_list)
-    print('%s_video_%s:%07d\t cost = %.3f \t max = %.3f\t min = %.3f\t mean = %.3f\t total_mean = %.3f'
-          % (dataset_name, video_name, cnt_cost, cur_cost, max_loss, min_loss, mean_loss, mean))
+    print('%s_video_%s:[%07d/%07d]\t cost = %.3f \t max = %.3f\t min = %.3f\t mean = %.3f\t total_mean = %.3f'
+          % (dataset_name, video_name, cnt_cost, len(dataloader), cur_cost, max_loss, min_loss, mean_loss, mean))
   #      frame_MSE_container = 0
 
 
@@ -288,7 +288,7 @@ for i, (data, grid_number) in enumerate(dataloader, 0):
                                  int(grid_size/2):int(grid_size/2+grid_size*(grid_unit-1))])/2
 
         recon_container = np.uint8(((recon_container + 1) / 2) * 255)
-        Image.fromarray(np.transpose(recon_container, (1, 2, 0)), 'RGB').save(
+        Image.fromarray(np.transpose(np.uint8(recon_container))).save(
             "/home/leejeyeol/git/AutoencodingTheWorld/training_result/endoscope/ShowImages/%06d.png" % i)
 
         '''

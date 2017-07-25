@@ -90,10 +90,10 @@ def border_drawer(frame, original_image, MSE_list):
         grid_x, grid_y, grid_size = grid_axis_generator(i, target_rows, grid_unit)
         MSE_color = RedtoGreenScaler(MSE)
 
-        bordered_image[grid_x:grid_x + grid_size, grid_y, :] = MSE_color
-        bordered_image[grid_x:grid_x + grid_size, grid_y + grid_size, :] = MSE_color
-        bordered_image[grid_x, grid_y:grid_y + grid_size, :] = MSE_color
-        bordered_image[grid_x + grid_size, grid_y:grid_y + grid_size, :] = MSE_color
+        bordered_image[grid_y:grid_y + grid_size, grid_x, :] = MSE_color
+        bordered_image[grid_y:grid_y + grid_size, grid_x + grid_size, :] = MSE_color
+        bordered_image[grid_y, grid_x:grid_x + grid_size, :] = MSE_color
+        bordered_image[grid_y + grid_size, grid_x:grid_x + grid_size, :] = MSE_color
     if ground_truth[frame] == 1:
         bordered_image[0:target_rows - 1, 0, :] = [0, 0, 255]
         bordered_image[0:target_rows - 1, target_rows - 1, :] = [0, 0, 255]
