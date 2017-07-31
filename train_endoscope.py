@@ -24,7 +24,7 @@ parser = argparse.ArgumentParser(description='Detecting abnormal behavior in vid
 # model related ---------------------------------------------------------------
 parser.add_argument('--model', type=str, default='endoscope-BN', help='AE | AE-LTR | VAE | VAE-LTR | VAE-NARROW')
 parser.add_argument('--nc', type=int, default=3, help='number of input channel. default=3')
-parser.add_argument('--nz', type=int, default=128, help='size of the latent z vector. default=100')
+parser.add_argument('--nz', type=int, default=20, help='size of the latent z vector. default=100')
 parser.add_argument('--nf', type=int, default=32, help='size of lowest image filters. default=32')
 parser.add_argument('--l1_coef', type=float, default=0, help='coef of L1 regularization on the weights. default=0')
 parser.add_argument('--l2_coef', type=float, default=0, help='coef of L2 regularization on the weights. default=0')

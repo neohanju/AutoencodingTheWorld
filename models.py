@@ -31,7 +31,7 @@ def init_model_and_loss(options, cuda=False, margin_loss=False, grid_loss=True):
     elif 'AE-BN' == options.model:
         model = AE_BN(options.nc)
     elif 'endoscope-BN' == options.model:
-        model = endoscope_BN(options.nc)
+        model = endoscope_BN(options.nc, options.nf, options.nz)
     assert model
 
     if options.model_path != '':
@@ -780,7 +780,7 @@ class AE_BN(nn.Module):  # autoencoder struction from "Learning temporal regular
 
 
 class endoscope_BN(nn.Module):  # autoencoder struction from "Learning temporal regularity in video sequences"
-    def __init__(self, num_in_channels, num_filters=256, z_size=32):
+    def __init__(self, num_in_channels, num_filters=32, z_size=20):
 
         super().__init__()
 
