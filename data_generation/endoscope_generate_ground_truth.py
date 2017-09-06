@@ -22,9 +22,9 @@ abnormal_list = ["5:55:01", "6:11:27",
                  "6:13:32", "7:22:50",
                  "7:28:02", "7:33:35"]
 '''
-start_time = "0:11:23"
-end_time = "12:46:49"
-num_of_frames = int(59630/2)
+start_time = "0:00:00"
+end_time = "13:44:07"
+num_of_frames = 31502
 name = "Kim Jun Hong"
 abnormal_list = ["1:42:54", "1:48:47",
                  "1:50:05", "1:57:18",

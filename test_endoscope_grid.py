@@ -111,7 +111,7 @@ win_images = dict(
 dataset_paths = options.data_root
 mean_image_path = os.path.join(dataset_paths, "mean_image.npy")
 # todo : get video_ids by options
-video_ids=["video_test"]
+video_ids=[options.dataset[0]]
 mean_image = np.load(mean_image_path)
 
 # todo -
@@ -316,10 +316,10 @@ for i, (data, grid_number) in enumerate(dataloader, 0):
         time.sleep(0.005)  # for reliable drawing
 
 np.save(os.path.join(save_path, '%s_%s_%s.npy'
-                                      % (dataset_name[0], video_name[0], saved_options.model)),cost_npy)
+                                      % (dataset_name, video_name, saved_options.model)),cost_npy)
 np.save(os.path.join(save_path, '%s_%s_%s_grid_mse_list.npy'
-                                      % (dataset_name[0], video_name[0], saved_options.model)),mse_list)
+                                      % (dataset_name, video_name, saved_options.model)),mse_list)
 print(mean)
-print(os.path.join(save_path, '%s_video_%s_%s.npy' % (dataset_name[0], video_name[0], saved_options.model)))
+print(os.path.join(save_path, '%s_%s_%s.npy' % (dataset_name, video_name, saved_options.model)))
 # ()()
 # ('')HAANJU.YOO

@@ -828,6 +828,7 @@ class endoscope_BN(nn.Module):  # autoencoder struction from "Learning temporal 
         encode3, index2 = self.pool2(self.encode_act2(self.bn2(self.conv2(encode2))))
         code = self.encode_act3(self.bn3(self.conv3(encode3)))
         size1, size2 = encode1.size()[3], encode2.size()[3]
+
         return code, index1, size1, index2, size2
 
     def decode(self, code, index1, size1, index2, size2):
@@ -860,5 +861,7 @@ class endoscope_BN(nn.Module):  # autoencoder struction from "Learning temporal 
         self.unpool2.apply(weight_init)
         self.deconv3.apply(weight_init)
         self.decode_act3.apply(weight_init)
+
+
 #()()
 #('')HAANJU.YOO

@@ -4,8 +4,8 @@ import os
 
 cost_path = "/home/leejeyeol/git/AutoencodingTheWorld/training_result/endoscope/recon_costs"
 ground_truth = np.load(os.path.join(cost_path, "Kim Jun Hong_ground_truth.npy"))
-recon_cost = np.load(os.path.join(cost_path, "e_v_endoscope-BN.npy"))
-cost_list_per_image = np.load(os.path.join(cost_path, "e_v_endoscope-BN_grid_mse_list.npy"))
+recon_cost = np.load(os.path.join(cost_path, "endoscope_full_test_endoscope-BN.npy"))
+cost_list_per_image = np.load(os.path.join(cost_path, "endoscope_full_test_endoscope-BN_grid_mse_list.npy"))
 
 
 

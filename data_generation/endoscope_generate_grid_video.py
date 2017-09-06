@@ -107,12 +107,12 @@ def border_drawer(frame, original_image, MSE_list):
 
 
 print('Frames loading...')
-filename = "video_test"
+filename = "full_test"
 original_image_path ="/home/leejeyeol/Data/endoscope_only/frames"
 recon_image_path="/home/leejeyeol/git/AutoencodingTheWorld/training_result/endoscope/ShowImages"
 cost_path = "/home/leejeyeol/git/AutoencodingTheWorld/training_result/endoscope/recon_costs"
 ground_truth = np.load(os.path.join(cost_path, "Kim Jun Hong_ground_truth.npy"))
-cost_list_per_image = np.load(os.path.join(cost_path, "e_v_endoscope-BN_grid_mse_list.npy"))
+cost_list_per_image = np.load(os.path.join(cost_path, "endoscope_full_test_endoscope-BN_grid_mse_list.npy"))
 
 
 image_files = get_file_paths(os.path.join(original_image_path, filename), '/*.', ['png', 'PNG'])
