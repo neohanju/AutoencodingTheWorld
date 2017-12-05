@@ -1,13 +1,14 @@
 from __future__ import print_function
+
 import argparse
-import torch
-import torch.utils.data
+
 import torch.nn as nn
 import torch.optim as optim
+import torch.utils.data
 from torch.autograd import Variable
-from torchvision import datasets, transforms
-from MNIST.MNIST_data import MNIST
+from torchvision import transforms
 
+from legacy.MNIST.MNIST_data import MNIST
 
 parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',

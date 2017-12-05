@@ -2,12 +2,13 @@ import argparse
 import os
 import random
 import time
+
 import torch.utils.data
-from torch.autograd import Variable
-from models import init_model_and_loss
-from data import VideoClipSets
 import utils as util
-import numpy as np
+from data import VideoClipSets
+from torch.autograd import Variable
+
+from legacy.models import init_model_and_loss
 
 
 def debug_print(arg):
@@ -28,6 +29,7 @@ parser.add_argument('--output_type', type=str, default='recon_costs', help='type
 # data related ----------------------------------------------------------------
 parser.add_argument('--dataset', type=str, required=True, nargs='+',
                     help="all | avenue | ped1 | ped2 | enter | exit. 'all' means using entire data")
+parser.add_argument('--videos', type=int, nargs='*', default=None, help='list of video indices to test.')
 parser.add_argument('--data_root', type=str, required=True, help='path to base folder of entire dataset')
 # display related -------------------------------------------------------------
 parser.add_argument('--display', action='store_true', default=False,
@@ -37,7 +39,6 @@ parser.add_argument('--num_gpu', type=int, default=1, help='number of GPUs to us
 # ETC -------------------------------------------------------------------------
 parser.add_argument('--random_seed', type=int, help='manual seed')
 parser.add_argument('--debug_print', action='store_true', default=False, help='print debug information')
-parser.add_argument('--max_mse', type=float, default=0.0, help='MSE threshold about saving diff samples')
 # -----------------------------------------------------------------------------
 
 options = parser.parse_args()
@@ -92,31 +93,16 @@ win_images = dict(
 # DATA PREPARATION
 # =============================================================================
 dataset_paths, mean_images = util.get_dataset_paths_and_mean_images(options.dataset, options.data_root, 'test')
-dataset = VideoClipSets(dataset_paths)
+dataset = VideoClipSets(dataset_paths, video_ids=options.videos)
 dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=1, shuffle=False,
                                          num_workers=1, pin_memory=True)
-
-# for utility library
-util.target_sample_index = 0
-util.target_frame_index = int(saved_options.nc / 2)
-util.mean_images = mean_images
-debug_print('Utility library is ready')
-
-# make dir for saving diffs
-diff_paths = dict()
-mean_cubes = {}
-for i, path in enumerate(dataset_paths, 0):
-    setname = options.dataset[i]
-    mean_cubes[setname] = util.make_cube_with_single_frame(mean_images[setname], saved_options.nc)
-    diff_paths[setname] = os.path.join(os.path.dirname(path), 'diff')
-    util.make_dir(diff_paths[setname])
 
 # streaming buffer
 tm_buffer_set = time.time()
 input_batch = torch.FloatTensor(1, saved_options.nc, saved_options.image_size, saved_options.image_size)
 recon_batch = torch.FloatTensor(1, saved_options.nc, saved_options.image_size, saved_options.image_size)
-mu_batch = torch.FloatTensor(1, saved_options.z_size[0], saved_options.z_size[1], saved_options.z_size[2])
-logvar_batch = torch.FloatTensor(1, saved_options.z_size[0], saved_options.z_size[1], saved_options.z_size[2])
+mu_batch = torch.FloatTensor(1, options.z_size[0], options.z_size[1], options.z_size[2])
+logvar_batch = torch.FloatTensor(1, options.z_size[0], options.z_size[1], options.z_size[2])
 debug_print('Stream buffers are set: %.3f sec elapsed' % (time.time() - tm_buffer_set))
 
 if cuda_available:
@@ -134,6 +120,12 @@ recon_batch = Variable(recon_batch)
 debug_print('To Variable for Autograd: %.3f sec elapsed' % (time.time() - tm_to_variable))
 
 print('Data streaming is ready')
+
+# for utility library
+util.target_sample_index = 0
+util.target_frame_index = int(saved_options.nc / 2)
+util.mean_images = mean_images
+debug_print('Utility library is ready')
 
 
 # =============================================================================
@@ -155,21 +147,32 @@ print('Start testing...')
 tm_test_start = time.time()
 
 cost_file_path = ''
+z_file_path = ''
 prev_dataset_name = ''
 prev_video_name = ''
 cnt_cost = 0
 
 
-for i, (data, dataset_name, video_name, file_name) in enumerate(dataloader, 0):
+for i, (data, dataset_name, video_name, _) in enumerate(dataloader, 0):
     if prev_dataset_name != dataset_name or prev_video_name != video_name:
         # new video is started
         print("Testing on '%s' dataset video '%s'... " % (dataset_name, video_name))
+
+        # create new cost file
         cost_file_path = os.path.join(save_path, '%s_video_%s_%s.txt'
                                       % (dataset_name[0], video_name[0], saved_options.model))
         util.file_print_list(cost_file_path, [], overwrite=True)
-        cnt_cost = 0
+
+        # draw new cost graph
         win_recon_cost = None
+
+        # create new latent space
+        z_file_path = os.path.join(save_path, '%s_video_%s_%s_latent_variables.txt'
+                                   % (dataset_name[0], video_name[0], saved_options.model))
+        util.file_print_list(z_file_path, [], overwrite=True)
+
         prev_dataset_name, prev_video_name = dataset_name, video_name
+        cnt_cost = 0
 
     # data load
     input_batch.data.copy_(data)
@@ -183,6 +186,14 @@ for i, (data, dataset_name, video_name, file_name) in enumerate(dataloader, 0):
 
     print('%s_video_%s:%04d, cost = %.3f' % (dataset_name[0], video_name[0], cnt_cost, cur_cost))
 
+    # save cost
+    util.file_print_list(cost_file_path, [cur_cost], overwrite=False)
+
+    # save latent variables
+    np_mu = mu_batch.data[0, :, :, :].cpu().numpy().flatten()
+    #np_sig = np.exp(0.5 * logvar_batch.data[0,:,0,0].cpu().numpy())
+    util.file_print_list(z_file_path, np_mu.tolist(), False)
+
     # visualization
     if options.display:
         win_images = util.draw_images(win_images, input_batch, recon_batch.data, dataset_name)
@@ -192,18 +203,6 @@ for i, (data, dataset_name, video_name, file_name) in enumerate(dataloader, 0):
                                                      title='%s: video_%s' % (dataset_name[0], video_name[0]),
                                                      ylabel='reconstruction cost', xlabel='sample index')
         time.sleep(0.005)  # for reliable drawing
-
-    # save error samples
-    if loss_detail['recon'] >= options.max_mse:
-        batch_diff = (input_batch.data.cpu().numpy() - recon_batch.data.cpu().numpy()) * 255
-        for diff_idx in range(1):
-            setname = dataset_name[diff_idx]
-            diff_path = os.path.join(diff_paths[setname], file_name[diff_idx])
-            diff_sample = batch_diff[diff_idx, :, :, :] + mean_cubes[setname]
-            np.save(diff_path, diff_sample.astype(np.uint8))
-
-    # save cost
-    util.file_print_list(cost_file_path, [cur_cost], overwrite=False)
 
 
 # ()()

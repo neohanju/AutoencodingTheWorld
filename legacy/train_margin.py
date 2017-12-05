@@ -1,14 +1,16 @@
 import argparse
 import os
-import time
 import random
 import socket
-import torch.utils.data
+import time
+
 import torch.optim as optim
-from torch.autograd import Variable
-from models import init_model_and_loss
-from data import VideoClipSets
+import torch.utils.data
 import utils as util
+from data import VideoClipSets
+from torch.autograd import Variable
+
+from legacy.models import init_model_and_loss
 
 
 def debug_print(arg):

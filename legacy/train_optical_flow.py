@@ -1,15 +1,17 @@
 import argparse
 import os
-import time
 import random
 import socket
-import torch.utils.data
+import time
+
 import torch.optim as optim
-from torch.autograd import Variable
-from models import init_model_and_loss
-from data import VideoClipBootstrappingSets
+import torch.utils.data
 import utils as util
-import numpy as np
+from data import OpticalFlowSets
+from torch.autograd import Variable
+
+from legacy.models import init_model_and_loss
+
 
 def debug_print(arg):
     if not options.debug_print:
@@ -23,19 +25,16 @@ parser = argparse.ArgumentParser(description='Detecting abnormal behavior in vid
 
 # model related ---------------------------------------------------------------
 parser.add_argument('--model', type=str, default='VAE', help='AE | AE-LTR | VAE | VAE-LTR | VAE-NARROW')
-parser.add_argument('--nc', type=int, default=10, help='number of input channel. default=10')
+parser.add_argument('--nc', type=int, default=18, help='number of input channel. default=10')
 parser.add_argument('--nz', type=int, default=128, help='size of the latent z vector. default=100')
 parser.add_argument('--nf', type=int, default=64, help='size of lowest image filters. default=64')
 parser.add_argument('--l1_coef', type=float, default=0, help='coef of L1 regularization on the weights. default=0')
-parser.add_argument('--l2_coef', type=float, default=0.0005, help='coef of L2 regularization on the weights. default=0')
+parser.add_argument('--l2_coef', type=float, default=0, help='coef of L2 regularization on the weights. default=0')
 parser.add_argument('--var_loss_coef', type=float, default=1.0, help='balancing coef of vairational loss. default=0')
-parser.add_argument('--margin_sigma', type=float, default=1.5, help='Multiplier on MSE sigma for margin. default=2.5')
-parser.add_argument('--resample_interval', type=int, default=10, help="resampling interval. default=10")
-parser.add_argument('--z_perturb', action='store_true', default=False, help='Perturbation z with MSE. default=False')
 # training related ------------------------------------------------------------
 parser.add_argument('--model_path', type=str, default='', help='path of pretrained network. default=""')
 parser.add_argument('--batch_size', type=int, default=64, help='input batch size. default=64')
-parser.add_argument('--epochs', type=int, default=1000, help='number of epochs to train for. default=25')
+parser.add_argument('--epochs', type=int, default=10, help='number of epochs to train for. default=25')
 parser.add_argument('--max_iter', type=int, default=150000, help='number of iterations to train for. default=150,000')
 # data related ----------------------------------------------------------------
 parser.add_argument('--dataset', type=str, required=True, nargs='+',
@@ -68,6 +67,7 @@ parser.add_argument('--save_name', type=str, default='', help='name for network 
 parser.add_argument('--random_seed', type=int, help='manual seed')
 parser.add_argument('--debug_print', action='store_true', default=False, help='print debug information')
 # -----------------------------------------------------------------------------
+
 options = parser.parse_args()
 
 # seed
@@ -161,27 +161,13 @@ win_images = dict(
 # DATA PREPARATION
 # =============================================================================
 # set data loader
-dataset_paths, mean_images = util.get_dataset_paths_and_mean_images(options.dataset, options.data_root, 'train')
-dataset = VideoClipBootstrappingSets(dataset_paths, centered=False)
+dataset_paths, mean_cubes = util.get_dataset_paths_and_mean_images(options.dataset, options.data_root, 'train', True)
+dataset = OpticalFlowSets(dataset_paths, centered=False)
+dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=True,
+                                         num_workers=options.workers)
 for path in dataset_paths:
     print("Dataset from '%s'" % path)
-debug_print('Dataset is ready')
-
-# for utility library
-util.target_sample_index = 0
-util.target_frame_index = int(options.nc / 2)
-util.mean_images = mean_images
-util.optical_flow = False
-debug_print('Utility library is ready')
-
-# for generating diff. samples
-diff_paths = dict()
-mean_cubes = {}
-for i, path in enumerate(dataset_paths, 0):
-    setname = options.dataset[i]
-    mean_cubes[setname] = util.make_cube_with_single_frame(mean_images[setname], options.nc)
-    diff_paths[setname] = os.path.join(os.path.dirname(path), 'diff')
-    util.make_dir(diff_paths[setname])
+debug_print('Data loader is ready')
 
 # streaming buffer
 tm_buffer_set = time.time()
@@ -191,9 +177,6 @@ mu_batch = torch.FloatTensor(options.batch_size, options.z_size[0], options.z_si
 logvar_batch = torch.FloatTensor(options.batch_size, options.z_size[0], options.z_size[1], options.z_size[2])
 debug_print('Stream buffers are set: %.3f sec elapsed' % (time.time() - tm_buffer_set))
 
-num_pixels = options.nc * options.image_size * options.image_size
-
-# GPU
 if cuda_available:
     debug_print('Start transferring to CUDA')
     tm_gpu_start = time.time()
@@ -203,7 +186,6 @@ if cuda_available:
     logvar_batch = logvar_batch.cuda()
     debug_print('Transfer to GPU: %.3f sec elapsed' % (time.time() - tm_gpu_start))
 
-# Variables
 tm_to_variable = time.time()
 input_batch = Variable(input_batch)
 recon_batch = Variable(recon_batch)
@@ -212,9 +194,25 @@ print('input_batch:', input_batch.size())
 print('recon_batch:', recon_batch.size())
 debug_print('Data streaming is ready')
 
-# model & loss
-model, our_loss = init_model_and_loss(options, cuda_available, margin_loss=True)
+# for utility library
+util.target_sample_index = 0
+util.target_frame_index = int(options.nc / 2)
+util.mean_cubes = mean_cubes
+util.optical_flow = True
+debug_print('Utility library is ready')
+
+
+# =============================================================================
+# MODEL & LOSS FUNCTION
+# =============================================================================
+model, our_loss = init_model_and_loss(options, cuda_available)
 print(model)
+
+# =============================================================================
+# TRAINING
+# =============================================================================
+print('Start training...')
+model.train()
 
 # optimizer
 model_params = model.parameters()
@@ -256,45 +254,32 @@ if options.continue_train:
         train_info['prev_epoch_count'] += prev_train_info['prev_epoch_count']
         train_info['prev_iter_count'] += prev_train_info['prev_iter_count']
 
-num_samples_before_sampling = len(dataset)
-learning_margin = 0
-margin = 0
+# main loop of training
 for epoch in range(options.epochs):
-
-    # =============================================================================
-    # NETWORK TRAINING
-    # =============================================================================
-    dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=True,
-                                             num_workers=options.workers)
-
-    print('Start training...')
-    min_loss = options.nc * options.image_size * options.image_size
-    max_loss = -1
-
     tm_cur_epoch_start = tm_cur_iter_start = time.time()
     for i, (data, setname, _, _) in enumerate(dataloader, 1):
         num_iters_in_epoch = i
 
-        # feed data
+        # ============================================
+        # DATA FEED
+        # ============================================
         if data.size() != input_batch.data.size():
-            input_batch.data.resize_(data.size())
-            recon_batch.data.resize_(data.size())
+            # input_batch.data.resize_(data.size())
+            # recon_batch.data.resize_(data.size())
+            # this will be deprecated by 'last_drop' attributes of dataloader
+            continue
         input_batch.data.copy_(data)
 
+        # ============================================
+        # TRAIN
+        # ============================================
         # forward
         tm_train_start = time.time()
         model.zero_grad()
-        recon_batch, mu_batch, _ = model(input_batch)
+        recon_batch, mu_batch, logvar_batch = model(input_batch)
 
         # backward
-        loss, loss_detail = our_loss.calculate(recon_batch, input_batch, learning_margin, options)
-        if options.z_perturb and 0 != learning_margin:
-            perturb_power = (loss_detail['max_mse'] - min_loss) / (max_loss - min_loss) + 1
-            h = mu_batch.register_hook(lambda grad: grad * perturb_power)
-            loss.backward()
-            h.remove()
-        else:
-            loss.backward()
+        loss, loss_detail = our_loss.calculate(recon_batch, input_batch, options, mu_batch, logvar_batch)
         loss.backward()
 
         # update
@@ -306,12 +291,6 @@ for epoch in range(options.epochs):
         recent_loss = loss.data[0]
         loss_info = util.add_dict(loss_info, loss_detail)
 
-        # calculate margin
-        if min_loss > loss_detail['max_mse']:
-            min_loss = loss_detail['max_mse']
-        if max_loss < loss_detail['max_mse']:
-            max_loss = loss_detail['max_mse']
-
         # ============================================
         # VISUALIZATION
         # ============================================
@@ -322,7 +301,7 @@ for epoch in range(options.epochs):
         tm_visualize_consume = time.time() - tm_visualize_start
 
         # print iteration's summary
-        print('[%4d/%4d][%3d/%3d] Iter:%4d %s Total time elapsed: %s'
+        print('[%4d/%4d][%3d/%3d] Iter:%4d\t %s \tTotal time elapsed: %s'
               % (epoch+1, options.epochs, i, len(dataloader), iter_count+1, util.get_loss_string(loss_detail),
                  util.formatted_time(time.time() - tm_loop_start)))
 
@@ -341,25 +320,21 @@ for epoch in range(options.epochs):
         time_info['ETC'] += tm_etc_consume
         time_info['visualize'] += tm_visualize_consume
         # ===============================================
-        tm_cur_iter_start = time.time()
+        tm_cur_iter_start = time.time()  # to measure the time of enumeration of the loop controller, set timer at here
         iter_count += 1
 
     average_loss_info = {key: value / num_iters_in_epoch for key, value in loss_info.items()}
     average_time_info = {key: value / num_iters_in_epoch for key, value in time_info.items()}
     loss_info = dict.fromkeys(loss_info, 0)
     time_info = dict.fromkeys(time_info, 0)
-    average_loss_info['min_loss'] = min_loss
-    average_loss_info['max_loss'] = max_loss
-    average_loss_info['margin'] = margin
 
-    print('====> Epoch %d is terminated: Epoch time is %s, Avg. loss %.3f, min %.3f, max %.3f, margin %.3f'
-          % (epoch + 1, util.formatted_time(time.time() - tm_cur_epoch_start), average_loss_info['total'], min_loss,
-             max_loss, learning_margin))
+    print('====> Epoch %d is terminated: Epoch time is %s, Average loss is %.3f'
+          % (epoch+1, util.formatted_time(time.time() - tm_cur_epoch_start), average_loss_info['total']))
 
     # draw graph at every drawing period (always draw at the beginning(= epoch zero))
     loss_info_vis = util.add_dict(average_loss_info, loss_info_vis)
     time_info_vis = util.add_dict(average_time_info, time_info_vis)
-    if options.display and 0 == (epoch+1) % options.display_interval or 0 == epoch:
+    if 0 == (epoch+1) % options.display_interval or 0 == epoch:
         # averaging w.r.t. display frequency
         if 1 != options.display_interval and 0 != epoch:
             loss_info_vis = {key: value / options.display_interval for key, value in loss_info_vis.items()}
@@ -378,58 +353,6 @@ for epoch in range(options.epochs):
         util.save_model(os.path.join(save_path, '%s_epoch_%03d.pth')
                         % (options.save_name, epoch+1), model.state_dict(), train_info, True)
 
-    if 0 != (epoch+1) % options.resample_interval:
-        continue
 
-    # =============================================================================
-    # RESAMPLING
-    # =============================================================================
-    sampling_prob = [1.0] * num_samples_before_sampling
-    dataset.resampling(sampling_prob)
-    dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=options.batch_size, shuffle=False,
-                                             num_workers=options.workers)
-
-    print('Start testing...')
-    model.eval()
-    sample_MSE = []
-    for i, (data, setname, _, _) in enumerate(dataloader, 1):
-
-        time_iter_start = time.time()
-
-        # feed data
-        if data.size() != input_batch.data.size():
-            input_batch.data.resize_(data.size())
-            recon_batch.data.resize_(data.size())
-        input_batch.data.copy_(data)
-
-        # forward
-        recon_batch, mu_batch, logvar_batch = model(input_batch)
-
-        # evaluate MSE
-        diff_batch = recon_batch.sub_(input_batch).pow(2)
-        for diff_idx in range(input_batch.data.size()[0]):
-            diff_map = diff_batch.data[diff_idx, :, :, :].cpu().numpy()
-            cur_mse = np.sum(diff_map)
-            sample_MSE += [cur_mse]
-
-            # print('[%4d/%4d][%3d/%3d] Evaluate MSE, Iter time elapsed: %s'
-            #       % (epoch + 1, options.epochs, i, len(dataloader), util.formatted_time(time.time() - time_iter_start)))
-
-    MSE_np = np.array(sample_MSE)
-    MSE_mean = np.mean(MSE_np, axis=0)
-    MSE_std = np.std(MSE_np, axis=0)
-    MSE_max = max(sample_MSE)
-    MSE_min = min(sample_MSE)
-    margin = MSE_mean + options.margin_sigma * MSE_std
-    print('[%4d/%4d] margin: %.3f, MSE: min=%.3f, max=%.3f, mean=%.3f, std=%.3f' %
-          (epoch + 1, options.epochs, margin, MSE_min, MSE_max, MSE_mean, MSE_std))
-
-    sampling_prob = [min((mse - MSE_min) / (margin - MSE_min), 1) for mse in sample_MSE]
-    print(' Resampling...')
-    while True:
-        dataset.resampling(sampling_prob)
-        if len(dataset) > 0:
-            break
-    print(' Resampled data %d (%.3f percent)' % (len(dataset), len(dataset) / num_samples_before_sampling * 100))
 #()()
 #('')HAANJU.YOO

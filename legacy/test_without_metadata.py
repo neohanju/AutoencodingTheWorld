@@ -1,15 +1,16 @@
 import argparse
-import os
-import sys
-import random
-import time
 import glob
-import numpy as np
-import torch.utils.data
+import os
+import random
+import sys
+import time
+
 import torch.backends.cudnn as cudnn
-from torch.autograd import Variable
-from models import AE, VAE, AE_LTR, VAE_LTR, OurLoss
+import torch.utils.data
 import utils as util
+from torch.autograd import Variable
+
+from legacy.models import AE, VAE, AE_LTR, VAE_LTR, OurLoss
 
 
 def debug_print(arg):
