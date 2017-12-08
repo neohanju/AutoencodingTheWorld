@@ -33,6 +33,7 @@ Thumbs.db
 testing_result/
 training_result/
 dataset/
+Evaluation/
 
 # image file #
 ######################
@@ -57,3 +58,4 @@ data
 MNIST_DATA
 ./MNIST_DATA/*
 *.jpg
+*.pth

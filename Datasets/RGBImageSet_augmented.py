@@ -5,7 +5,7 @@ import numpy as np
 
 
 class RGBImageSet_augmented(torch.utils.data.Dataset):
-    def __init__(self, path, centered=False):
+    def __init__(self, path, type = 'train', centered=False, fold_number = None):
         super().__init__()
         self.centered = centered
         self.add_string = lambda a, b: a + b
@@ -15,7 +15,17 @@ class RGBImageSet_augmented(torch.utils.data.Dataset):
 
         self.mean_image = self.get_mean_image()
 
-        cur_file_paths = glob.glob(self.base_path + '/*.npy')
+        if fold_number is not None:
+            self.fold_number = fold_number
+            if type == 'train':
+                cur_file_paths = list(
+                    np.load(os.path.join(os.path.split(path)[0], '10fold_%d_train.npy' % self.fold_number)))
+            elif type == 'test':
+                cur_file_paths = list(
+                    np.load(os.path.join(os.path.split(path)[0], '10fold_%d_test.npy' % self.fold_number)))
+        else:
+            cur_file_paths = glob.glob(self.base_path + '/*.npy')
+
         cur_file_paths.sort()
         self.file_paths = cur_file_paths
 
@@ -30,8 +40,10 @@ class RGBImageSet_augmented(torch.utils.data.Dataset):
         mask = (np.ones(mask.shape) - mask / 255)
 
         mask = np.repeat(mask[:, :, np.newaxis], 3, axis=2)
-        mask = np.transpose(mask, (2, 0, 1))
-        data = np.transpose(data, (2, 0, 1))
+        if mask.shape[0] != 1 and mask.shape[0] != 3:
+            mask = np.transpose(mask, (2, 0, 1))
+        if data.shape[0] != 1 and data.shape[0] != 3:
+            data = np.transpose(data, (2, 0, 1))
         # (h w c) => (c h w)
 
         if data.dtype.name == 'uint8':
@@ -42,8 +54,8 @@ class RGBImageSet_augmented(torch.utils.data.Dataset):
         else:
             data = torch.FloatTensor(data)
 
-            h = self.mean_image.shape[1]
-            w = self.mean_image.shape[2]
+            h = self.mean_image.shape[0]
+            w = self.mean_image.shape[1]
             image_anchor = [[int(h / 4), int(w / 4)], [0, int(w / 4)],
                             [int(h / 4), 0], [int(h / 4), int(w / 2)],
                             [int(h / 2), int(w / 4)]]

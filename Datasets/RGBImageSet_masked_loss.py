@@ -24,7 +24,7 @@ class RGBImageSet_masked_loss(torch.utils.data.Dataset):
                 cur_file_paths = list(np.load(os.path.join(os.path.split(path)[0], '10fold_%d_test.npy' % self.fold_number)))
         else:
             cur_file_paths = glob.glob(self.base_path + '/*.npy')
-            cur_file_paths.sort()
+        cur_file_paths.sort()
 
         self.file_paths = cur_file_paths
 

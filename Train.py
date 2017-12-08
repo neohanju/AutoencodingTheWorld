@@ -25,7 +25,7 @@ import Models.AutoEncoder as model
 parser = argparse.ArgumentParser()
 # Options for path =====================================================================================================
 parser.add_argument('--dataset', default='MNIST', help='what is dataset?')
-parser.add_argument('--dataroot', default='/media/leejeyeol/74B8D3C8B8D38750/Data/CVC-ClinicDB/train_augmented', help='path to dataset')
+parser.add_argument('--dataroot', default='/media/leejeyeol/74B8D3C8B8D38750/Data/CVC-ClinicDB/error_image', help='path to dataset')
 parser.add_argument('--net', default='', help="path of networks.(to continue training)")
 parser.add_argument('--outf', default='./output', help="folder to output images and model checkpoints")
 
@@ -33,7 +33,7 @@ parser.add_argument('--cuda', action='store_true', help='enables cuda')
 parser.add_argument('--display', default=False, help='display options. default:False. NOT IMPLEMENTED')
 parser.add_argument('--ngpu', type=int, default=1, help='number of GPUs to use')
 parser.add_argument('--workers', type=int, default=1, help='number of data loading workers')
-parser.add_argument('--iteration', type=int, default=1000, help='number of epochs to train for')
+parser.add_argument('--iteration', type=int, default=100, help='number of epochs to train for')
 
 # these options are saved for testing
 parser.add_argument('--batchSize', type=int, default=20, help='input batch size')
@@ -84,98 +84,102 @@ if torch.cuda.is_available() and not options.cuda:
 # MNIST call and load   ================================================================================================
 
 # todo fold number
-fold_number = 0
-dataloader = torch.utils.data.DataLoader(dset.RGBImageSet_augmented(options.dataroot, centered=False),batch_size=options.batchSize, shuffle=True, num_workers=options.workers)
+for fold_number in range(10):
+    dataloader = torch.utils.data.DataLoader(dset.RGBImageSet_augmented(options.dataroot,type='train', centered=False,fold_number=fold_number),batch_size=options.batchSize, shuffle=True, num_workers=options.workers)
 
-# normalize to -1~1
-ngpu = int(options.ngpu)
-nz = int(options.nz)
-nc = int(options.nc)
-nf = int(options.nf)
-image_size = int(options.imageSize)
-batch_size = int(options.batchSize)
-#=======================================================================================================================
-# Models
-#=======================================================================================================================
-
-
-
-# AutoEncoder ============================================================================================================
-net = model.AE(nc, nz, nf)
-net.apply(model.weight_init)
-if options.net != '':
-    net.load_state_dict(torch.load(options.net))
-print(net)
-
-#=======================================================================================================================
-# Training
-#=======================================================================================================================
-
-# criterion set
-criterion = nn.MSELoss()
-
-# setup optimizer   ====================================================================================================
-
-optimizer = optim.Adam(net.parameters(), betas=(0.5, 0.999), lr=2e-4)
+    # normalize to -1~1
+    ngpu = int(options.ngpu)
+    nz = int(options.nz)
+    nc = int(options.nc)
+    nf = int(options.nf)
+    image_size = int(options.imageSize)
+    batch_size = int(options.batchSize)
+    #=======================================================================================================================
+    # Models
+    #=======================================================================================================================
 
 
 
-# container generate
-input = torch.FloatTensor(batch_size, nc, image_size, image_size)
-mask = torch.FloatTensor(batch_size, nc, image_size, image_size)
+    # AutoEncoder ============================================================================================================
+    net = model.AE(nc, nz, nf)
+    net.apply(model.weight_init)
+    if options.net != '':
+        net.load_state_dict(torch.load(options.net))
+    print(net)
 
-if options.cuda:
-    net.cuda()
-    criterion.cuda()
-    input = input.cuda()
-    mask = mask.cuda()
+    #=======================================================================================================================
+    # Training
+    #=======================================================================================================================
+
+    # criterion set
+    criterion = nn.MSELoss()
+
+    # setup optimizer   ====================================================================================================
+
+    optimizer = optim.Adam(net.parameters(), betas=(0.5, 0.999), lr=2e-4)
 
 
-# make to variables ====================================================================================================
-input = Variable(input)
-mask = Variable(mask)
+
+    # container generate
+    input = torch.FloatTensor(batch_size, nc, image_size, image_size)
+    mask = torch.FloatTensor(batch_size, nc, image_size, image_size)
+
+    if options.cuda:
+        net.cuda()
+        criterion.cuda()
+        input = input.cuda()
+        mask = mask.cuda()
 
 
-# training start
-print("Training Start!")
-for epoch in range(options.iteration):
-    for i, (data, mask_, _) in enumerate(dataloader, 0):
-        ############################
-        # (1) Update D network
-        ###########################
-        # train with real data  ========================================================================================
-        optimizer.zero_grad()
+    # make to variables ====================================================================================================
+    input = Variable(input)
+    mask = Variable(mask)
 
-        real_cpu = data
-        batch_size = real_cpu.size(0)
-        input.data.resize_(real_cpu.size()).copy_(real_cpu)
-        mask.data.resize_(real_cpu.size()).copy_(mask_.float())
 
-        output, z = net(input)
-        output_for_vis = output.data
+    # training start
+    print("Training Start!")
+    for epoch in range(options.iteration):
+        for i, (data, mask_, _) in enumerate(dataloader, 0):
+            ############################
+            # (1) Update D network
+            ###########################
+            # train with real data  ========================================================================================
+            optimizer.zero_grad()
 
-        input = input*mask
-        output = output*mask
+            real_cpu = data
+            batch_size = real_cpu.size(0)
+            input.data.resize_(real_cpu.size()).copy_(real_cpu)
+            mask.data.resize_(real_cpu.size()).copy_(mask_.float())
 
-        loss = criterion(output, input)
-        # todo mask
-        loss.backward()
+            output, z = net(input)
+            output_for_vis = output.data
+            '''
+            input = input*mask
+            output = output*mask
+    
+            loss = criterion(output, input)
+            '''
+            loss = criterion(output, mask)
 
-        optimizer.step()
+            # todo mask
+            loss.backward()
 
-        #visualize
+            optimizer.step()
 
-        print('[%d/%d][%d/%d] Loss : %0.5f'
-              % (epoch, options.iteration, i, len(dataloader), loss.data[0]))
+            #visualize
 
-        if i == len(dataloader)-1:
-            vutils.save_image(real_cpu, '%s/real_samples_.png' % options.outf, normalize=True)
-            vutils.save_image(output_for_vis, '%s/recon_samples_%d.png' % (options.outf,epoch), normalize=True)
-            vutils.save_image(mask.data, '%s/mask_samples.png' % (options.outf), normalize=True)
+            print('[%d/%d][%d/%d] Loss : %0.5f'
+                  % (epoch, options.iteration, i, len(dataloader), loss.data[0]))
 
-    # do checkpointing
-    if epoch%10 == 0 :
-        torch.save(net.state_dict(), '%s/network_epoch_%d_fold_%d.pth' % (options.outf, epoch, fold_number))
+            #if i == len(dataloader)-1:
+                #vutils.save_image(real_cpu, '%s/real_samples_.png' % options.outf, normalize=True)
+                #vutils.save_image(output_for_vis, '%s/recon_samples_%d.png' % (options.outf,epoch), normalize=True)
+                #vutils.save_image(mask.data, '%s/mask_samples.png' % (options.outf), normalize=True)
+
+        # do checkpointing
+        if epoch%100 == 0 :
+            #torch.save(net.state_dict(), '%s/network_epoch_%d_error-mask_fold%d.pth' % (options.outf, epoch, fold_number))
+            torch.save(net.state_dict(), '%s/network_epoch_%d_fold_%d.pth' % (options.outf, epoch, fold_number))
 
 
 
