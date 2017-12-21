@@ -10,6 +10,8 @@ import torch.utils.data
 import torchvision.datasets as dset
 import torchvision.transforms as transforms
 import torchvision.utils as vutils
+import utils
+import time
 from torch.autograd import Variable
 import torch.optim as optim
 # import custom package
@@ -30,10 +32,10 @@ parser.add_argument('--net', default='', help="path of networks.(to continue tra
 parser.add_argument('--outf', default='./output', help="folder to output images and model checkpoints")
 
 parser.add_argument('--cuda', action='store_true', help='enables cuda')
-parser.add_argument('--display', default=False, help='display options. default:False. NOT IMPLEMENTED')
+parser.add_argument('--display', default=True, help='display options. default:False. NOT IMPLEMENTED')
 parser.add_argument('--ngpu', type=int, default=1, help='number of GPUs to use')
 parser.add_argument('--workers', type=int, default=1, help='number of data loading workers')
-parser.add_argument('--iteration', type=int, default=100, help='number of epochs to train for')
+parser.add_argument('--iteration', type=int, default=200, help='number of epochs to train for')
 
 # these options are saved for testing
 parser.add_argument('--batchSize', type=int, default=20, help='input batch size')
@@ -77,12 +79,15 @@ if torch.cuda.is_available() and not options.cuda:
     print("WARNING: You have a CUDA device, so you should probably run with --cuda")
 
 
+# visualization
+win_recon_cost = None
+
 #=======================================================================================================================
 # Data and Parameters
 #=======================================================================================================================
 
 # MNIST call and load   ================================================================================================
-
+cnt = 0
 # todo fold number
 for fold_number in range(10):
     dataloader = torch.utils.data.DataLoader(dset.RGBImageSet_augmented(options.dataroot,type='train', centered=False,fold_number=fold_number),batch_size=options.batchSize, shuffle=True, num_workers=options.workers)
@@ -153,13 +158,14 @@ for fold_number in range(10):
 
             output, z = net(input)
             output_for_vis = output.data
-            '''
-            input = input*mask
-            output = output*mask
-    
-            loss = criterion(output, input)
-            '''
-            loss = criterion(output, mask)
+
+            if os.path.basename(options.dataroot) == "train_augmented":
+                input = input*mask
+                output = output*mask
+                loss = criterion(output, input)
+
+            elif os.path.basename(options.dataroot) == "error_image":
+                loss = criterion(output, mask)
 
             # todo mask
             loss.backward()
@@ -168,18 +174,35 @@ for fold_number in range(10):
 
             #visualize
 
-            print('[%d/%d][%d/%d] Loss : %0.5f'
-                  % (epoch, options.iteration, i, len(dataloader), loss.data[0]))
+            print('[%d][%d/%d][%d/%d] Loss : %0.5f'
+                  % (fold_number,epoch, options.iteration, i, len(dataloader), loss.data[0]))
 
             #if i == len(dataloader)-1:
                 #vutils.save_image(real_cpu, '%s/real_samples_.png' % options.outf, normalize=True)
                 #vutils.save_image(output_for_vis, '%s/recon_samples_%d.png' % (options.outf,epoch), normalize=True)
                 #vutils.save_image(mask.data, '%s/mask_samples.png' % (options.outf), normalize=True)
 
+            if options.display:
+                win_recon_cost = utils.viz_append_line_points(win=win_recon_cost,
+                                                             lines_dict=dict(recon=loss.data[0], zero=0),
+                                                             x_pos=cnt,
+                                                             title="training",
+                                                             ylabel='reconstruction cost', xlabel='step')
+                cnt = cnt +1
+                time.sleep(0.005)  # for reliable drawing
         # do checkpointing
-        if epoch%100 == 0 :
-            #torch.save(net.state_dict(), '%s/network_epoch_%d_error-mask_fold%d.pth' % (options.outf, epoch, fold_number))
-            torch.save(net.state_dict(), '%s/network_epoch_%d_fold_%d.pth' % (options.outf, epoch, fold_number))
+        if (epoch+1)%options.iteration == 0:
+
+            if os.path.basename(options.dataroot) == "train_augmented":
+                torch.save(net.state_dict(),
+                           '%s/network_epoch_%d_error-mask_fold%d.pth' % (options.outf, epoch, fold_number))
+
+            elif os.path.basename(options.dataroot) == "error_image":
+                torch.save(net.state_dict(),
+                           '%s/error-mask-network_epoch_%d_fold_%d.pth' % (options.outf, epoch, fold_number))
+
+
+
 
 
 

@@ -93,7 +93,9 @@ if not os.path.exists(error_save_path):
 
 # todo fold number
 for fold_number in range(10):
-    dataloader = torch.utils.data.DataLoader(dset.RGBImageSet_augmented(options.dataroot, type='test', centered=False, fold_number=fold_number),batch_size=options.batchSize, shuffle=True, num_workers=options.workers)
+
+
+    dataloader = torch.utils.data.DataLoader(dset.RGBImageSet_augmented(options.dataroot, type='test', centered=False, fold_number=fold_number),batch_size=options.batchSize, shuffle=False, num_workers=options.workers)
 
     # normalize to -1~1
     ngpu = int(options.ngpu)
@@ -106,7 +108,10 @@ for fold_number in range(10):
     # Models
     #=======================================================================================================================
 
-
+    if os.path.basename(options.dataroot) == "train_augmented":
+        options.net ='/home/leejeyeol/Git/AutoencodingTheWorld/output/network_epoch_19_error-mask_fold%d.pth'%fold_number
+    elif os.path.basename(options.dataroot) == "error_image":
+        options.net = '/home/leejeyeol/Git/AutoencodingTheWorld/output/error-mask-network_epoch_19_fold_%d.pth' % fold_number
 
     # AutoEncoder ============================================================================================================
     net = model.AE(nc,nz,nf)
@@ -163,37 +168,31 @@ for fold_number in range(10):
 
             output, _ = net(input)
             output_for_vis = output.data
+            if os.path.basename(options.dataroot) == "train_augmented":
 
-            error_image = input - output
-            error_image = error_image.data.cpu().numpy()
-            error_image=np.reshape(error_image, [error_image.shape[1], error_image.shape[2], error_image.shape[3]])
-            '''
-            error_image = np.reshape(error_image.data.cpu().numpy(),(3,227,227))
-            error_image = error_image.swapaxes(0,1).swapaxes(1,2)
-            error_image = cv2.cvtColor(error_image,cv2.COLOR_RGB2GRAY)
-            error_image = (error_image + abs(error_image.min()))
-            error_image = (error_image/error_image.max()) * 255
-            error_image = error_image - error_image[2][2]
-            '''
+                error_image = input - output
+                error_image = error_image.data.cpu().numpy()
+                error_image = np.reshape(error_image, [error_image.shape[1], error_image.shape[2], error_image.shape[3]])
+                input = input * mask
+                output = output * mask
+                masked_error_image = input - output
+                loss = criterion(output, input)
 
-            input = input * mask
-            output = output * mask
+            elif os.path.basename(options.dataroot) == "error_image":
+                loss = criterion(output, mask)
 
-            masked_error_image = input - output
-
-            loss = criterion(output, input)
-
-            total_loss.append(loss)
+            #total_loss.append(loss)
 
             print('[%d/%d][%d/%d] Loss : %0.5f'
-                  % (epoch, options.iteration, i, len(dataloader), loss.data[0]))
+                  % (fold_number, 10, i, len(dataloader), loss.data[0]))
 
 
             #vutils.save_image(real_cpu, '%s/%04d_real_samples.png' % (options.outf, i))
-            #vutils.save_image(output_for_vis, '%s/%04drecon_samples.png' % (options.outf, i))
-            vutils.save_image(mask.data, '%s/%04d_mask_samples.png' % (options.outf, i))
+            #vutils.save_image(output_for_vis, '%s/%05d_recon_samples.png' % (options.outf, i))
+            #vutils.save_image(mask.data, '%s/%05d_mask_samples.png' % (options.outf, i))
+            if os.path.basename(options.dataroot) == "train_augmented":
+                np.save(os.path.join(error_save_path, data_name[0]), error_image)
 
-            np.save(os.path.join(error_save_path, data_name[0]), error_image)
             #cv2.imwrite('%s/%04d_error_image.png' % (options.outf, i),error_image)
             #vutils.save_image(error_image, '%s/%04d_error_image.png' % (options.outf, i))
             #vutils.save_image(masked_error_image.data, '%s/%04d_masked_error_image.png' % (options.outf, i))
