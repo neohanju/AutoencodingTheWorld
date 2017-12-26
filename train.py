@@ -1,98 +1,84 @@
 import argparse
 import os
 import random
-import torch
 import torch.nn as nn
-import torch.nn.init
-import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.utils.data
-import torchvision.datasets as dset
-import torchvision.transforms as transforms
-import torchvision.utils as vutils
 import utils
 import time
 from torch.autograd import Variable
 import torch.optim as optim
-# import custom package
 
-import PathManager
 import Datasets.RGBImageSet_augmented as dset
 import Models.AutoEncoder as model
-
-
+import PathManager as pm
 
 # ======================================================================================================================
-# Options
+# OPTIONS
 # ======================================================================================================================
 parser = argparse.ArgumentParser()
-# Options for path =====================================================================================================
+# paths
 parser.add_argument('--dataset', default='MNIST', help='what is dataset?')
-parser.add_argument('--dataroot', default='/home/mlpa/data_ssd/workspace/dataset/CVC-ClinicDB/train_augmented', help='path to dataset')
+parser.add_argument('--dataroot', default=os.path.join(pm.datasetroot, 'train_augmented'),
+                    help='root path to dataset')
 parser.add_argument('--net', default='', help="path of networks.(to continue training)")
 parser.add_argument('--outf', default='./output', help="folder to output images and model checkpoints")
-
-parser.add_argument('--cuda', default=True, action='store_true', help='enables cuda')
-parser.add_argument('--display', default=True, help='display options. default:False. NOT IMPLEMENTED')
-parser.add_argument('--ngpu', type=int, default=2, help='number of GPUs to use')
-parser.add_argument('--workers', type=int, default=1, help='number of data loading workers')
-parser.add_argument('--iteration', type=int, default=200, help='number of epochs to train for')
-
-# these options are saved for testing
-parser.add_argument('--batchSize', type=int, default=20, help='input batch size')
-parser.add_argument('--imageSize', type=int, default=224, help='the height / width of the input image to network')
+# model
 parser.add_argument('--model', type=str, default='InfoGAN', help='Model name')
 parser.add_argument('--nc', type=int, default=3, help='number of input channel.')
 parser.add_argument('--nz', type=int, default=400, help='latent size.')
 parser.add_argument('--nf', type=int, default=64, help='number of filter.(first layer)')
-
+# GPU
+parser.add_argument('--cuda', default=True, action='store_true', help='enables cuda')
+parser.add_argument('--ngpu', type=int, default=2, help='number of GPUs to use')
+parser.add_argument('--display', default=True, help='display options. default:False. NOT IMPLEMENTED')
+parser.add_argument('--workers', type=int, default=1, help='number of data loading workers')
+# optimizer
+parser.add_argument('--iteration', type=int, default=200, help='number of epochs to train for')
 parser.add_argument('--lr', type=float, default=0.0002, help='learning rate')
 parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for Adam.')
-
-
+# metadata for testing
+parser.add_argument('--batchSize', type=int, default=20, help='input batch size')
+parser.add_argument('--imageSize', type=int, default=224, help='the height / width of the input image to network')
+# etc
 parser.add_argument('--seed', type=int, help='manual seed')
 
 options = parser.parse_args()
 print(options)
 
-
-# save directory make   ================================================================================================
+# output directory
 try:
     os.makedirs(options.outf)
 except OSError:
     pass
 
-# seed set  ============================================================================================================
+# random seed
 if options.seed is None:
     options.seed = random.randint(1, 10000)
 print("Random Seed: ", options.seed)
 random.seed(options.seed)
 torch.manual_seed(options.seed)
 
-# cuda set  ============================================================================================================
-if options.cuda:
-    torch.cuda.manual_seed(options.seed)
-
-torch.backends.cudnn.benchmark = True
-cudnn.benchmark = True
+# cuda related
 if torch.cuda.is_available() and not options.cuda:
     print("WARNING: You have a CUDA device, so you should probably run with --cuda")
+if options.cuda:
+    torch.cuda.manual_seed(options.seed)
+torch.backends.cudnn.benchmark = True
+cudnn.benchmark = True
 
-
-# visualization
+# visualization (visdom)
 win_recon_cost = None
 
-# ======================================================================================================================
-# Data and Parameters
-# ======================================================================================================================
 
-# MNIST call and load   ================================================================================================
+# ======================================================================================================================
+# MAIN LOOP
+# ======================================================================================================================
 cnt = 0
-# todo fold number
 for fold_number in range(10):
     dataloader = torch.utils.data.DataLoader(
         dset.RGBImageSet_augmented(options.dataroot, op_type='train', centered=False, fold_number=fold_number),
-        batch_size=options.batchSize,shuffle=True, num_workers=options.workers)
+        batch_size=options.batchSize, shuffle=True, num_workers=options.workers)
 
     # normalize to -1~1
     ngpu = int(options.ngpu)
@@ -120,24 +106,21 @@ for fold_number in range(10):
     criterion = nn.MSELoss()
 
     # setup optimizer ==================================================================================================
-
     optimizer = optim.Adam(net.parameters(), betas=(0.5, 0.999), lr=2e-4)
 
     # container generate
-    input = torch.FloatTensor(batch_size, nc, image_size, image_size)
-    mask = torch.FloatTensor(batch_size, nc, image_size, image_size)
+    input_tensor = torch.FloatTensor(batch_size, nc, image_size, image_size)
+    mask_tensor = torch.FloatTensor(batch_size, nc, image_size, image_size)
 
     if options.cuda:
         net.cuda()
         criterion.cuda()
-        input = input.cuda()
-        mask = mask.cuda()
+        input_tensor = input_tensor.cuda()
+        mask_tensor = mask_tensor.cuda()
 
-
-    # make to variables ====================================================================================================
-    input = Variable(input)
-    mask = Variable(mask)
-
+    # make to variables
+    input_tensor = Variable(input_tensor)
+    mask_tensor = Variable(mask_tensor)
 
     # training start
     print("Training Start!")
@@ -146,32 +129,31 @@ for fold_number in range(10):
             ############################
             # (1) Update D network
             ###########################
-            # train with real data  ========================================================================================
+            # train with real data
             optimizer.zero_grad()
 
             real_cpu = data
             batch_size = real_cpu.size(0)
-            input.data.resize_(real_cpu.size()).copy_(real_cpu)
-            mask.data.resize_(real_cpu.size()).copy_(mask_.float())
+            input_tensor.data.resize_(real_cpu.size()).copy_(real_cpu)
+            mask_tensor.data.resize_(real_cpu.size()).copy_(mask_.float())
 
-            output, z = net(input)
+            output, z = net(input_tensor)
             output_for_vis = output.data
 
             if os.path.basename(options.dataroot) == "train_augmented":
-                input = input*mask
-                output = output*mask
-                loss = criterion(output, input)
+                input_tensor = input_tensor * mask_tensor
+                output = output * mask_tensor
+                loss = criterion(output, input_tensor)
 
             elif os.path.basename(options.dataroot) == "error_image":
-                loss = criterion(output, mask)
+                loss = criterion(output, mask_tensor)
 
             # todo mask
             loss.backward()
 
             optimizer.step()
 
-            #visualize
-
+            # visualize
             print('[%d][%d/%d][%d/%d] Loss : %0.5f'
                   % (fold_number,epoch, options.iteration, i, len(dataloader), loss.data[0]))
 
@@ -188,8 +170,9 @@ for fold_number in range(10):
                                                              ylabel='reconstruction cost', xlabel='step')
                 cnt = cnt +1
                 time.sleep(0.005)  # for reliable drawing
-        # do checkpointing
-        if (epoch+1)%options.iteration == 0:
+
+        # checkpoint operation
+        if (epoch+1) % options.iteration == 0:
 
             if os.path.basename(options.dataroot) == "train_augmented":
                 torch.save(net.state_dict(),
@@ -200,9 +183,7 @@ for fold_number in range(10):
                            '%s/error-mask-network_epoch_%d_fold_%d.pth' % (options.outf, epoch, fold_number))
 
 
-
-
-
-
 # Je Yeol. Lee \[T]/
 # Jolly Co-operation
+#()()
+#('')HAANJU.YOO

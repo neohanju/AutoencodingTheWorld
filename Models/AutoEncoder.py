@@ -1,12 +1,13 @@
 import torch
 import torch.nn as nn
+import torch.nn.parallel
 
 '''
 size 113
 '''
 
 class AE(nn.Module):
-    def __init__(self, num_in_channels, z_size=200, num_filters=32):
+    def __init__(self, num_in_channels, z_size=200, num_filters=32, ngpu=1):
         super().__init__()
         self.encoder = nn.Sequential(
             # expected input: (L) x 227 x 227
@@ -59,8 +60,16 @@ class AE(nn.Module):
             # state size: (L) x 227 x 227
         )
 
+        self.main = nn.Sequential(
+            self.encoder,
+            self.z,
+            self.decoder
+        )
+
         # init weights
         self.weight_init()
+
+        self.ngpu = ngpu
 
     def encode(self, x):
         return self.z(self.encoder(x))
@@ -70,7 +79,11 @@ class AE(nn.Module):
 
     def forward(self, x):
         z = self.encode(x)
-        return self.decode(z), z
+        if self.ngpu > 1:
+            decode_z = nn.parallel.data_parallel(self.main, x, range(self.ngpu))
+        else:
+            decode_z = self.decode(z)
+        return decode_z, z
 
     def weight_init(self):
         self.encoder.apply(weight_init)

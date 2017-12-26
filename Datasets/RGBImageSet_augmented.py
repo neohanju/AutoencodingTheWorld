@@ -5,27 +5,25 @@ import numpy as np
 
 
 class RGBImageSet_augmented(torch.utils.data.Dataset):
-    def __init__(self, path, type = 'train', centered=False, fold_number = None):
+    def __init__(self, path, op_type='train', centered=False, fold_number=None):
         super().__init__()
+
         self.centered = centered
         self.add_string = lambda a, b: a + b
 
         assert os.path.exists(path)
         self.base_path = path
-
         self.mean_image = self.get_mean_image()
 
         if fold_number is not None:
-            self.fold_number = fold_number
-            if type == 'train':
+            if op_type == 'train':
                 cur_file_paths = list(
-                    np.load(os.path.join(os.path.split(path)[0], '10fold_%d_train.npy' % self.fold_number)))
-            elif type == 'test':
+                    np.load(os.path.join(os.path.split(path)[0], '10fold_%d_train.npy' % fold_number)))
+            elif op_type == 'test':
                 cur_file_paths = list(
-                    np.load(os.path.join(os.path.split(path)[0], '10fold_%d_test.npy' % self.fold_number)))
+                    np.load(os.path.join(os.path.split(path)[0], '10fold_%d_test.npy' % fold_number)))
         else:
-            cur_file_paths = glob.glob(self.base_path + '/*.npy')
-
+            cur_file_paths = glob.glob(os.path.join(self.base_path, '*.npy'))
         cur_file_paths.sort()
         self.file_paths = cur_file_paths
 
@@ -64,7 +62,7 @@ class RGBImageSet_augmented(torch.utils.data.Dataset):
             flip_index = int(os.path.basename(self.file_paths[item]).split('.')[0].split('_')[2])
             mean_patch = self.mean_image[image_anchor[anchor_index][0]:image_anchor[anchor_index][0] + int(h/2), image_anchor[anchor_index][1]:image_anchor[anchor_index][1] + int(w/2),:]
             if flip_index == 0:
-                 mean_patch = mean_patch
+                mean_patch = mean_patch
             elif flip_index == 1:
                 mean_patch = np.flip(mean_patch, 0)
             elif flip_index == 2:
@@ -85,3 +83,6 @@ class RGBImageSet_augmented(torch.utils.data.Dataset):
     def get_mean_image(self):
         mean_image = np.load(os.path.join(os.path.dirname(self.base_path), "mean_image.npy"))
         return mean_image
+
+# ()()
+# ('')HAANJU.YOO
